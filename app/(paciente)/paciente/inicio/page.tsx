@@ -611,7 +611,7 @@ export default function InicioPage() {
         ) : (
           <>
             <ResponsiveContainer width="100%" height={180}>
-              <ComposedChart data={chartData} margin={{ top: 24, right: 10, left: -18, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="#f1f5f9"
@@ -628,8 +628,8 @@ export default function InicioPage() {
                   tick={{ fontSize: 10, fill: '#94a3b8' }}
                   axisLine={false}
                   tickLine={false}
-                  width={34}
-                  tickFormatter={(v: number) => v % 1 === 0 ? String(v) : v.toFixed(1)}
+                  width={55}
+                  tickFormatter={(value) => value.toString()}
                   domain={['auto', 'auto']}
                 />
                 <Tooltip content={<CustomTooltip />} />
