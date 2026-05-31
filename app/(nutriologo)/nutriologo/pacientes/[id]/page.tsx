@@ -1068,7 +1068,7 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={mediciones} margin={{ top: 5, right: hasRightAxis ? 20 : 10, bottom: 5, left: 8 }}>
+            <LineChart data={mediciones} margin={{ top: 5, right: hasRightAxis ? 20 : 10, bottom: 5, left: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis
                 dataKey="fecha"
