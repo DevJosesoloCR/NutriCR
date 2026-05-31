@@ -611,7 +611,7 @@ export default function InicioPage() {
         ) : (
           <>
             <ResponsiveContainer width="100%" height={180}>
-              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="#f1f5f9"
@@ -625,10 +625,10 @@ export default function InicioPage() {
                   interval="preserveStartEnd"
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: '#94a3b8' }}
+                  tick={{ fontSize: 10, fill: '#94a3b8', textAnchor: 'end' }}
                   axisLine={false}
                   tickLine={false}
-                  width={55}
+                  width={40}
                   tickFormatter={(value) => value.toString()}
                   domain={['auto', 'auto']}
                 />
