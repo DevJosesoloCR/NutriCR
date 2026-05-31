@@ -14,7 +14,7 @@ interface Notificacion {
 const pageTitles: Record<string, string> = {
   '/paciente/inicio':   'Inicio',
   '/paciente/plan':     'Mi Plan',
-  '/paciente/diario':   'Diario de comidas',
+  '/paciente/diario':   'Diario',
   '/paciente/recetas':  'Recetas',
   '/paciente/perfil':   'Mi Perfil',
   '/paciente/despensa': 'Despensa',
@@ -72,27 +72,30 @@ export default function PacienteHeader() {
 
   return (
     <>
-      <header className="relative bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-        <span className="font-bold text-brand-700">Nutri Smart CR</span>
+      <header className="bg-white border-b border-slate-100 px-4 py-3 grid grid-cols-[1fr_auto_1fr] items-center sticky top-0 z-10">
+        {/* Izquierda: marca */}
+        <span className="font-bold text-brand-700 truncate">Nutri Smart CR</span>
 
-        {/* Título centrado en pantalla — absolute para no verse afectado por los anchos laterales */}
-        <h1 className="absolute inset-x-0 text-center font-semibold text-slate-700 text-sm pointer-events-none">
+        {/* Centro: título de la página — nunca se solapa con los extremos */}
+        <h1 className="text-center font-semibold text-slate-700 text-sm px-2 whitespace-nowrap">
           {title}
         </h1>
 
-        {/* Campana de notificaciones */}
-        <button
-          onClick={abrirModal}
-          className="relative w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
-          aria-label="Notificaciones"
-        >
-          🔔
-          {noLeidas > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
-              {noLeidas > 9 ? '9+' : noLeidas}
-            </span>
-          )}
-        </button>
+        {/* Derecha: campana de notificaciones */}
+        <div className="flex justify-end">
+          <button
+            onClick={abrirModal}
+            className="relative w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+            aria-label="Notificaciones"
+          >
+            🔔
+            {noLeidas > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                {noLeidas > 9 ? '9+' : noLeidas}
+              </span>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* ── Modal de notificaciones ── */}
