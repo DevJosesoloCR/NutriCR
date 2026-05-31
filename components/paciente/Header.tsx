@@ -12,12 +12,13 @@ interface Notificacion {
 }
 
 const pageTitles: Record<string, string> = {
-  '/paciente/inicio':   'Inicio',
-  '/paciente/plan':     'Mi Plan',
-  '/paciente/diario':   'Diario',
-  '/paciente/recetas':  'Recetas',
-  '/paciente/perfil':   'Mi Perfil',
-  '/paciente/despensa': 'Despensa',
+  '/paciente/inicio':    'Inicio',
+  '/paciente/plan':      'Mi Plan',
+  '/paciente/diario':    'Diario',
+  '/paciente/recetas':   'Recetas',
+  '/paciente/perfil':    'Mi Perfil',
+  '/paciente/despensa':  'Despensa',
+  '/paciente/escanear':  'Factura',
 };
 
 function formatFecha(iso: string) {
