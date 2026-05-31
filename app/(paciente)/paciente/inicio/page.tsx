@@ -611,7 +611,7 @@ export default function InicioPage() {
         ) : (
           <>
             <ResponsiveContainer width="100%" height={180}>
-              <ComposedChart data={chartData} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="#f1f5f9"
