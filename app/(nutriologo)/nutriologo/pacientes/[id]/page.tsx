@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import {
   ResponsiveContainer,
   LineChart,
@@ -191,11 +192,13 @@ function SectionCard({
   icon,
   children,
   action,
+  badge,
 }: {
   title: string;
   icon: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  badge?: React.ReactNode;
 }) {
   return (
     <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
@@ -203,6 +206,7 @@ function SectionCard({
         <div className="flex items-center gap-2.5">
           <span className="text-lg">{icon}</span>
           <h2 className="font-semibold text-slate-800">{title}</h2>
+          {badge}
         </div>
         {action}
       </div>
@@ -665,6 +669,55 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
   }, [pacienteId]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // ── Realtime + polling: sincronizar estado leída de notas ────────────────────
+  useEffect(() => {
+    if (!pacienteId || pacienteId === 'mock-detalle') return;
+
+    // Helper para recargar sólo las notas desde la API
+    async function refrescarNotas() {
+      try {
+        const res  = await fetch(`/api/pacientes/${pacienteId}/notas`);
+        if (!res.ok) return;
+        const json = await res.json();
+        setNotas(json.data ?? []);
+        console.log('[dashboard] notas actualizadas por polling/realtime');
+      } catch { /* silencioso */ }
+    }
+
+    // 1. Polling cada 20 s — funciona aunque Realtime no esté habilitado en Supabase
+    const intervalo = setInterval(refrescarNotas, 20_000);
+
+    // 2. Realtime — si la tabla notas tiene replicación activa, actualiza al instante
+    const supabase = createClient();
+    const channel  = supabase
+      .channel(`notas-paciente-${pacienteId}`)
+      .on(
+        'postgres_changes',
+        {
+          event:  'UPDATE',
+          schema: 'public',
+          table:  'notas',
+          filter: `paciente_id=eq.${pacienteId}`,
+        },
+        (payload) => {
+          console.log('[dashboard] realtime UPDATE notas:', payload.new);
+          setNotas((prev) =>
+            prev.map((n) =>
+              n.id === (payload.new as Nota).id ? { ...n, ...(payload.new as Nota) } : n,
+            ),
+          );
+        },
+      )
+      .subscribe((status) => {
+        console.log('[dashboard] realtime notas status:', status);
+      });
+
+    return () => {
+      clearInterval(intervalo);
+      supabase.removeChannel(channel);
+    };
+  }, [pacienteId]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -1431,7 +1484,18 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
       {/* ══════════════════════════════════════════════════════════════════════
           7. NOTAS DEL NUTRICIONISTA
       ══════════════════════════════════════════════════════════════════════ */}
-      <SectionCard title="Notas para el paciente" icon="📝">
+      <SectionCard
+        title="Notas para el paciente"
+        icon="📝"
+        badge={(() => {
+          const noLeidas = notas.filter((n) => !n.leida).length;
+          return noLeidas > 0 ? (
+            <span className="min-w-[20px] h-5 bg-amber-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1 leading-none">
+              {noLeidas}
+            </span>
+          ) : null;
+        })()}
+      >
         {/* Nueva nota */}
         <div className="space-y-3 mb-6">
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">
