@@ -65,7 +65,7 @@ export async function PATCH(request: Request) {
         .eq('paciente_id', auth.data.pacienteId)
         .eq('mensaje', notif.mensaje)
         .eq('leida', false)
-        .select('id', { count: 'exact', head: true });
+        .select('id');
 
       if (notaErr) {
         console.error('[notificaciones PATCH] Error actualizando nota:', notaErr.message);
@@ -80,7 +80,7 @@ export async function PATCH(request: Request) {
       .update({ leida: true })
       .eq('paciente_id', auth.data.pacienteId)
       .eq('leida', false)
-      .select('id', { count: 'exact', head: true });
+      .select('id');
 
     if (notasErr) {
       console.error('[notificaciones PATCH] Error actualizando notas (bulk):', notasErr.message);
