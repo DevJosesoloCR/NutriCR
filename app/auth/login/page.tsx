@@ -14,6 +14,39 @@ function LoginForm() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
 
+  // ── Recuperar contraseña ────────────────────────────────────────────────────
+  const [showReset,   setShowReset]   = useState(false);
+  const [resetEmail,  setResetEmail]  = useState('');
+  const [resetLoad,   setResetLoad]   = useState(false);
+  const [resetSent,   setResetSent]   = useState(false);
+  const [resetError,  setResetError]  = useState<string | null>(null);
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetEmail.trim()) return;
+    setResetLoad(true);
+    setResetError(null);
+    try {
+      const supabase = createClient();
+      const { error: err } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
+      if (err) { setResetError(err.message); return; }
+      setResetSent(true);
+    } catch {
+      setResetError('Error de conexión. Intentá de nuevo.');
+    } finally {
+      setResetLoad(false);
+    }
+  }
+
+  function cerrarReset() {
+    setShowReset(false);
+    setResetEmail('');
+    setResetSent(false);
+    setResetError(null);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -154,6 +187,15 @@ function LoginForm() {
               'Iniciar sesión'
             )}
           </button>
+
+          {/* ── Olvidé mi contraseña ── */}
+          <button
+            type="button"
+            onClick={() => { setShowReset(true); setResetEmail(email); }}
+            className="w-full text-center text-sm text-brand-600 hover:text-brand-800 transition-colors mt-1"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
         </form>
 
         <div className="mt-6 pt-5 border-t border-slate-200">
@@ -176,6 +218,80 @@ function LoginForm() {
           </div>
         </div>
       </div>
+      {/* ── Modal recuperar contraseña ── */}
+      {showReset && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={cerrarReset}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {!resetSent ? (
+              <>
+                <h3 className="text-lg font-bold text-slate-800 mb-1">Recuperar contraseña</h3>
+                <p className="text-sm text-slate-400 mb-5">
+                  Ingresá tu correo y te enviaremos un enlace para restablecer tu contraseña.
+                </p>
+
+                {resetError && (
+                  <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+                    <span>⚠️</span> {resetError}
+                  </div>
+                )}
+
+                <form onSubmit={handleReset} className="space-y-4">
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="tu@email.com"
+                    required
+                    autoFocus
+                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
+                  />
+                  <button
+                    type="submit"
+                    disabled={resetLoad || !resetEmail.trim()}
+                    className="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-brand-400 text-white font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    {resetLoad ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                        Enviando…
+                      </>
+                    ) : 'Enviar enlace de recuperación'}
+                  </button>
+                  <button type="button" onClick={cerrarReset} className="w-full text-sm text-slate-400 hover:text-slate-600 transition-colors">
+                    Cancelar
+                  </button>
+                </form>
+              </>
+            ) : (
+              /* ── Confirmación enviada ── */
+              <div className="text-center py-4 space-y-4">
+                <div className="text-5xl">📬</div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">¡Correo enviado!</h3>
+                  <p className="text-sm text-slate-500 mt-2">
+                    Revisá tu bandeja de entrada en <span className="font-semibold text-slate-700">{resetEmail}</span> para restablecer tu contraseña.
+                  </p>
+                </div>
+                <button
+                  onClick={cerrarReset}
+                  className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors"
+                >
+                  Entendido
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

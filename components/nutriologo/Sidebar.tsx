@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -17,11 +18,24 @@ const navItems = [
   { href: '/nutriologo/planes',     label: 'Planes',       icon: '📋' },
   { href: '/nutriologo/inventario', label: 'Inventario',   icon: '🥦' },
   { href: '/nutriologo/recetas',    label: 'Recetas IA',   icon: '✨' },
+  { href: '/nutriologo/perfil',     label: 'Mi Perfil',    icon: '⚙️' },
 ];
 
 export default function Sidebar({ expanded, animated, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const router   = useRouter();
+
+  // ── Nombre del nutricionista autenticado ──────────────────────────────────
+  const [nombreNutr, setNombreNutr] = useState<string>('Nutricionista');
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const nombre   = user.user_metadata?.nombre  as string | undefined;
+      const apellido = user.user_metadata?.apellido as string | undefined;
+      if (nombre) setNombreNutr(`${nombre}${apellido ? ' ' + apellido : ''}`);
+    });
+  }, []);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -124,7 +138,8 @@ export default function Sidebar({ expanded, animated, onToggle }: SidebarProps) 
           </div>
           {expanded && (
             <div className="flex-1 min-w-0 overflow-hidden">
-              <p className="text-sm font-medium text-slate-700 truncate">Nutricionista</p>
+              <p className="text-sm font-medium text-slate-700 truncate">{nombreNutr}</p>
+              <p className="text-xs text-slate-400 truncate">Nutricionista</p>
             </div>
           )}
           {expanded && (
