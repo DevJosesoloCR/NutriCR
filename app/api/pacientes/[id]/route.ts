@@ -17,7 +17,7 @@ export async function GET(
 
   const { data: paciente, error: pErr } = await supabase
     .from('pacientes')
-    .select('*, usuarios(nombre, apellido, email)')
+    .select('*, usuarios(nombre, apellido, email, avatar_url)')
     .eq('id', id)
     .single();
 
@@ -96,7 +96,7 @@ export async function GET(
   const estado     = calcEstado(adherencia, sinFotoReciente);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const usuario = (paciente as any).usuarios as { nombre: string; apellido: string | null; email: string } | null;
+  const usuario = (paciente as any).usuarios as { nombre: string; apellido: string | null; email: string; avatar_url: string | null } | null;
 
   return NextResponse.json({
     paciente: {
@@ -104,6 +104,7 @@ export async function GET(
       nombre:              usuario?.nombre              ?? '',
       apellido:            usuario?.apellido            ?? null,
       email:               usuario?.email               ?? '',
+      avatar_url:          usuario?.avatar_url          ?? null,
       objetivo:            paciente.objetivo,
       condiciones_medicas: paciente.condiciones_medicas ?? [],
       alergias:            paciente.alergias            ?? [],

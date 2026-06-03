@@ -63,7 +63,7 @@ export async function GET() {
 
       supabase
         .from('usuarios')
-        .select('id, nombre, apellido, email')
+        .select('id, nombre, apellido, email, avatar_url')
         .in('id', usuarioIds),
 
       // Fotos de diario últimos 7 días (para días únicos + sinFotoReciente)
@@ -182,8 +182,9 @@ export async function GET() {
       return {
         id:              p.id,
         nombre:          usuario?.nombre   ?? 'Desconocido',
-        apellido:        usuario?.apellido ?? null,
-        email:           usuario?.email    ?? '',
+        apellido:        usuario?.apellido   ?? null,
+        email:           usuario?.email      ?? '',
+        avatar_url:      usuario?.avatar_url ?? null,
         objetivo:        p.objetivo,
         adherencia,
         estado,

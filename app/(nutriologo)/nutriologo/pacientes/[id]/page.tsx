@@ -60,6 +60,7 @@ interface PacienteDetalle {
   nombre: string;
   apellido: string | null;
   email: string;
+  avatar_url: string | null;
   objetivo: string | null;
   condiciones_medicas: string[];
   alergias: string[];
@@ -120,6 +121,7 @@ const MOCK_PACIENTE: PacienteDetalle = {
   nombre:              'Ana',
   apellido:            'González Mora',
   email:               'ana.gonzalez@email.com',
+  avatar_url:          null,
   objetivo:            'Bajar grasa',
   condiciones_medicas: ['Hipotiroidismo', 'Resistencia a la insulina'],
   alergias:            ['Mariscos', 'Nueces'],
@@ -1034,8 +1036,13 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             {/* Avatar */}
-            <div className="w-14 h-14 rounded-full bg-brand-100 text-brand-700 text-xl font-bold flex items-center justify-center flex-shrink-0">
-              {(paciente.nombre.charAt(0) + (paciente.apellido?.charAt(0) ?? '')).toUpperCase()}
+            <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0">
+              {paciente.avatar_url
+                ? <img src={paciente.avatar_url} alt={paciente.nombre} className="w-full h-full object-cover" />
+                : <div className="w-full h-full bg-brand-100 text-brand-700 text-xl font-bold flex items-center justify-center">
+                    {(paciente.nombre.charAt(0) + (paciente.apellido?.charAt(0) ?? '')).toUpperCase()}
+                  </div>
+              }
             </div>
             <div>
               {/* Nombre */}

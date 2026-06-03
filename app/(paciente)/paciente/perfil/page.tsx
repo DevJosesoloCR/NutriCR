@@ -60,13 +60,12 @@ function AvatarUpload({ iniciales }: { iniciales: string }) {
   const [subiendo, setSubiendo] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
+  // Leer avatar desde tabla usuarios (fuente de verdad)
   useEffect(() => {
-    import('@/lib/supabase/client').then(({ createClient }) => {
-      createClient().auth.getUser().then(({ data: { user } }) => {
-        const url = user?.user_metadata?.avatar_url as string | undefined;
-        if (url) setAvatarUrl(url);
-      });
-    });
+    fetch('/api/user/me')
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => { if (json?.data?.avatar_url) setAvatarUrl(json.data.avatar_url); })
+      .catch(() => {});
   }, []);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {

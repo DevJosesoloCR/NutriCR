@@ -41,19 +41,31 @@ export default function NutriHeader({ onToggle }: NutriHeaderProps) {
   const pathname = usePathname();
   const title    = pageTitles[pathname] ?? 'Nutri Smart CR';
 
-  // ── Usuario / avatar ────────────────────────────────────────────────────────
+  // ── Usuario / avatar ─────────────────────────────────────────────────────────
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [iniciales, setIniciales] = useState('N');
 
   useEffect(() => {
-    createClient().auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      const nombre   = user.user_metadata?.nombre    as string | undefined;
-      const apellido = user.user_metadata?.apellido  as string | undefined;
-      const avatar   = user.user_metadata?.avatar_url as string | undefined;
-      if (nombre) setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
-      if (avatar) setAvatarUrl(avatar);
-    });
+    // Leer de la tabla usuarios (fuente de verdad) en lugar de user_metadata cacheado
+    fetch('/api/user/me')
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (!json?.data) return;
+        const { nombre, apellido, avatar_url } = json.data;
+        if (nombre) setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
+        if (avatar_url) setAvatarUrl(avatar_url);
+      })
+      .catch(() => {
+        // Fallback al user_metadata si la API falla
+        createClient().auth.getUser().then(({ data: { user } }) => {
+          if (!user) return;
+          const n = user.user_metadata?.nombre    as string | undefined;
+          const a = user.user_metadata?.apellido  as string | undefined;
+          const v = user.user_metadata?.avatar_url as string | undefined;
+          if (n) setIniciales((n.charAt(0) + (a?.charAt(0) ?? '')).toUpperCase());
+          if (v) setAvatarUrl(v);
+        });
+      });
   }, []);
 
   // ── Alertas / notificaciones ────────────────────────────────────────────────

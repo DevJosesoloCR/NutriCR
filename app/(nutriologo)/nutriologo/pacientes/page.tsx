@@ -11,6 +11,7 @@ interface PacienteRow {
   nombre:          string;
   apellido:        string | null;
   email:           string;
+  avatar_url:      string | null;
   objetivo:        string | null;
   adherencia:      number;
   estado:          string;
@@ -239,8 +240,11 @@ export default function PacientesPage() {
                   {/* ── Móvil ── */}
                   <div className="md:hidden px-4 py-4">
                     <div className="flex items-start gap-3">
-                      <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 text-sm font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
-                        {initiales(p.nombre, p.apellido)}
+                      <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 mt-0.5">
+                        {p.avatar_url
+                          ? <img src={p.avatar_url} alt={p.nombre} className="w-full h-full object-cover" />
+                          : <div className="w-full h-full bg-brand-100 text-brand-700 text-sm font-bold flex items-center justify-center">{initiales(p.nombre, p.apellido)}</div>
+                        }
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline justify-between gap-2">

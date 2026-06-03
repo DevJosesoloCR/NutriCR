@@ -43,21 +43,20 @@ export default function PacienteHeader() {
   const [showModal,   setShowModal]   = useState(false);
   const [marcando,    setMarcando]    = useState(false);
 
-  // Avatar del paciente
+  // Avatar del paciente — leído desde tabla usuarios (fuente de verdad)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [iniciales, setIniciales] = useState('');
 
   useEffect(() => {
-    import('@/lib/supabase/client').then(({ createClient }) => {
-      createClient().auth.getUser().then(({ data: { user } }) => {
-        if (!user) return;
-        const nombre   = user.user_metadata?.nombre    as string | undefined;
-        const apellido = user.user_metadata?.apellido  as string | undefined;
-        const avatar   = user.user_metadata?.avatar_url as string | undefined;
+    fetch('/api/user/me')
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (!json?.data) return;
+        const { nombre, apellido, avatar_url } = json.data;
         if (nombre) setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
-        if (avatar) setAvatarUrl(avatar);
-      });
-    });
+        if (avatar_url) setAvatarUrl(avatar_url);
+      })
+      .catch(() => {/* silencioso */});
   }, []);
 
   const cargarNotifs = useCallback(async () => {

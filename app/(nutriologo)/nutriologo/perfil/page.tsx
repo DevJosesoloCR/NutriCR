@@ -5,71 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 
-// ─── Avatar upload ────────────────────────────────────────────────────────────
-
-function AvatarUpload({ iniciales }: { iniciales: string }) {
-  const inputRef   = useRef<HTMLInputElement>(null);
-  const [preview,  setPreview]  = useState<string | null>(null);
-  const [subiendo, setSubiendo] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    createClient().auth.getUser().then(({ data: { user } }) => {
-      const url = user?.user_metadata?.avatar_url as string | undefined;
-      if (url) setAvatarUrl(url);
-    });
-  }, []);
-
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => setPreview(reader.result as string);
-    reader.readAsDataURL(file);
-    setSubiendo(true);
-    try {
-      const compressed = await comprimirImagen(file);
-      const fd = new FormData();
-      fd.append('file', compressed, 'avatar.jpg');
-      const res  = await fetch('/api/user/avatar', { method: 'POST', body: fd });
-      const json = await res.json();
-      if (res.ok) setAvatarUrl(json.url);
-    } catch { /* silencioso */ }
-    finally { setSubiendo(false); }
-  }
-
-  const foto = preview ?? avatarUrl;
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div
-        className="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer group"
-        onClick={() => inputRef.current?.click()}
-      >
-        {foto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={foto} alt="Avatar" className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full bg-brand-600 flex items-center justify-center text-3xl font-bold text-white">
-            {iniciales || 'N'}
-          </div>
-        )}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="text-white text-2xl">{subiendo ? '⏳' : '📷'}</span>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={subiendo}
-        className="text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors disabled:opacity-50"
-      >
-        {subiendo ? 'Subiendo…' : 'Cambiar foto'}
-      </button>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-    </div>
-  );
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function comprimirImagen(file: File): Promise<Blob> {
   const MAX = 512;
@@ -84,6 +20,149 @@ async function comprimirImagen(file: File): Promise<Blob> {
   const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
   canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
   return new Promise((res, rej) => canvas.toBlob((b) => b ? res(b) : rej(new Error('canvas')), 'image/jpeg', 0.85));
+}
+
+// ─── AvatarUpload ──────────────────────────────────────────────────────────────
+
+function AvatarUpload({ iniciales }: { iniciales: string }) {
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const [avatarUrl,  setAvatarUrl]  = useState<string | null>(null);   // foto guardada en BD
+  const [preview,    setPreview]    = useState<string | null>(null);   // data-url local antes de confirmar
+  const [blobPend,   setBlobPend]   = useState<Blob | null>(null);     // comprimido listo para subir
+  const [subiendo,   setSubiendo]   = useState(false);
+  const [imgError,   setImgError]   = useState(false);                 // la URL actual da error 404/broken
+
+  // Cargar avatar guardado desde la BD (fuente de verdad)
+  useEffect(() => {
+    fetch('/api/user/me')
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        const url = json?.data?.avatar_url as string | undefined;
+        if (url) { setAvatarUrl(url); setImgError(false); }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Cuando el usuario selecciona un archivo: generar preview local + comprimir
+  async function handleSeleccionar(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Vista previa inmediata
+    const reader = new FileReader();
+    reader.onloadend = () => setPreview(reader.result as string);
+    reader.readAsDataURL(file);
+    // Comprimir en paralelo
+    try {
+      const blob = await comprimirImagen(file);
+      setBlobPend(blob);
+    } catch { setBlobPend(null); }
+    // Reset el input para permitir seleccionar el mismo archivo otra vez
+    e.target.value = '';
+  }
+
+  // Confirmar: subir el blob comprimido
+  async function handleConfirmar() {
+    if (!blobPend) return;
+    setSubiendo(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', blobPend, 'avatar.jpg');
+      const res  = await fetch('/api/user/avatar', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (res.ok) {
+        setAvatarUrl(json.url);  // actualizar foto guardada
+        setImgError(false);
+      }
+    } catch { /* silencioso */ }
+    finally {
+      setSubiendo(false);
+      setPreview(null);
+      setBlobPend(null);
+    }
+  }
+
+  // Cancelar: descartar preview sin subir nada
+  function handleCancelar() {
+    setPreview(null);
+    setBlobPend(null);
+  }
+
+  // Qué mostrar en el círculo:
+  // - preview (data-url local) si estamos en paso de confirmación
+  // - avatarUrl si está guardado Y no dio error al cargar
+  // - iniciales como fallback
+  const mostrarFoto = preview ?? (imgError ? null : avatarUrl);
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      {/* Círculo 100 px */}
+      <div className="relative w-[100px] h-[100px] rounded-full overflow-hidden flex-shrink-0">
+        {mostrarFoto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={mostrarFoto}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={() => { setImgError(true); }}
+          />
+        ) : (
+          <div className="w-full h-full bg-brand-600 flex items-center justify-center text-3xl font-bold text-white select-none">
+            {iniciales || 'N'}
+          </div>
+        )}
+
+        {/* Overlay de carga */}
+        {subiendo && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <svg className="animate-spin h-7 w-7 text-white" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+          </div>
+        )}
+      </div>
+
+      {/* Botones según estado */}
+      {!preview ? (
+        // Estado normal: botón "Cambiar foto"
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="text-sm text-brand-600 hover:text-brand-800 font-medium transition-colors"
+        >
+          Cambiar foto
+        </button>
+      ) : (
+        // Estado con preview: Confirmar / Cancelar
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={handleConfirmar}
+            disabled={subiendo || !blobPend}
+            className="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white text-sm font-semibold transition-colors"
+          >
+            {subiendo ? 'Subiendo…' : 'Confirmar'}
+          </button>
+          <button
+            type="button"
+            onClick={handleCancelar}
+            disabled={subiendo}
+            className="px-4 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold transition-colors disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleSeleccionar}
+      />
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -298,29 +377,21 @@ export default function PerfilNutriologoPage() {
 
       {/* ── Avatar + datos ── */}
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
-        <div className="flex items-center gap-4 mb-5">
-          <div className="flex-shrink-0">
-            {loading ? (
-              <div className="w-16 h-16 rounded-full bg-slate-100 animate-pulse" />
-            ) : (
-              <AvatarUpload iniciales={iniciales} />
-            )}
-          </div>
-          <div className="min-w-0">
-            {loading ? (
-              <div className="space-y-1.5">
-                <div className="h-4 bg-slate-100 rounded animate-pulse w-36" />
-                <div className="h-3 bg-slate-100 rounded animate-pulse w-48" />
-              </div>
-            ) : (
-              <>
-                <p className="font-semibold text-slate-800 text-lg truncate">
-                  {nombre ? `${nombre}${apellido ? ' ' + apellido : ''}` : 'Nutricionista'}
-                </p>
-                <p className="text-slate-500 text-sm truncate">{email || '—'}</p>
-              </>
-            )}
-          </div>
+        {/* Avatar centrado */}
+        <div className="flex flex-col items-center mb-5">
+          {loading ? (
+            <div className="w-[100px] h-[100px] rounded-full bg-slate-100 animate-pulse mb-3" />
+          ) : (
+            <AvatarUpload iniciales={iniciales} />
+          )}
+          {!loading && (
+            <div className="text-center mt-1">
+              <p className="font-semibold text-slate-800 text-lg">
+                {nombre ? `${nombre}${apellido ? ' ' + apellido : ''}` : 'Nutricionista'}
+              </p>
+              <p className="text-slate-500 text-sm">{email || '—'}</p>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3 border-t border-slate-100 pt-4">

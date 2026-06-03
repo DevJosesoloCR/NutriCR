@@ -31,18 +31,21 @@ export default function Sidebar({ expanded, animated, onToggle }: SidebarProps) 
   const [iniciales,  setIniciales]  = useState<string>('N');
 
   useEffect(() => {
-    createClient().auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      const nombre   = user.user_metadata?.nombre    as string | undefined;
-      const apellido = user.user_metadata?.apellido  as string | undefined;
-      const avatar   = user.user_metadata?.avatar_url as string | undefined;
+    // Leer de tabla usuarios para avatar actualizado; nombre desde user_metadata
+    Promise.all([
+      fetch('/api/user/me').then((r) => r.ok ? r.json() : null),
+      createClient().auth.getUser(),
+    ]).then(([meJson, { data: { user } }]) => {
+      // Nombre desde user_metadata (siempre fresco en registro)
+      const nombre   = user?.user_metadata?.nombre   as string | undefined;
+      const apellido = user?.user_metadata?.apellido as string | undefined;
       if (nombre) {
-        const nombreCompleto = `${nombre}${apellido ? ' ' + apellido : ''}`;
-        setNombreNutr(nombreCompleto);
+        setNombreNutr(`${nombre}${apellido ? ' ' + apellido : ''}`);
         setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
       }
-      if (avatar) setAvatarUrl(avatar);
-    });
+      // Avatar desde tabla usuarios (fuente de verdad)
+      if (meJson?.data?.avatar_url) setAvatarUrl(meJson.data.avatar_url);
+    }).catch(() => {});
   }, []);
 
   async function handleLogout() {
