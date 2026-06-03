@@ -43,6 +43,23 @@ export default function PacienteHeader() {
   const [showModal,   setShowModal]   = useState(false);
   const [marcando,    setMarcando]    = useState(false);
 
+  // Avatar del paciente
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [iniciales, setIniciales] = useState('');
+
+  useEffect(() => {
+    import('@/lib/supabase/client').then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data: { user } }) => {
+        if (!user) return;
+        const nombre   = user.user_metadata?.nombre    as string | undefined;
+        const apellido = user.user_metadata?.apellido  as string | undefined;
+        const avatar   = user.user_metadata?.avatar_url as string | undefined;
+        if (nombre) setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
+        if (avatar) setAvatarUrl(avatar);
+      });
+    });
+  }, []);
+
   const cargarNotifs = useCallback(async () => {
     try {
       const res  = await fetch('/api/notificaciones');
@@ -82,8 +99,8 @@ export default function PacienteHeader() {
           {title}
         </h1>
 
-        {/* Derecha: campana de notificaciones */}
-        <div className="flex justify-end">
+        {/* Derecha: campana + avatar */}
+        <div className="flex justify-end items-center gap-1.5">
           <button
             onClick={abrirModal}
             className="relative w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
@@ -96,6 +113,24 @@ export default function PacienteHeader() {
               </span>
             )}
           </button>
+
+          {/* Avatar → perfil */}
+          <a href="/paciente/perfil" aria-label="Mi perfil">
+            <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 hover:ring-2 hover:ring-brand-300 transition-all">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : iniciales ? (
+                <div className="w-full h-full bg-brand-600 flex items-center justify-center">
+                  <span className="text-white text-[11px] font-bold">{iniciales}</span>
+                </div>
+              ) : (
+                <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-500 text-sm">
+                  👤
+                </div>
+              )}
+            </div>
+          </a>
         </div>
       </header>
 

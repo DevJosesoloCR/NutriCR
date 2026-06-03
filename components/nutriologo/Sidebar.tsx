@@ -27,13 +27,21 @@ export default function Sidebar({ expanded, animated, onToggle }: SidebarProps) 
 
   // ── Nombre del nutricionista autenticado ──────────────────────────────────
   const [nombreNutr, setNombreNutr] = useState<string>('Nutricionista');
+  const [avatarUrl,  setAvatarUrl]  = useState<string | null>(null);
+  const [iniciales,  setIniciales]  = useState<string>('N');
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      const nombre   = user.user_metadata?.nombre  as string | undefined;
-      const apellido = user.user_metadata?.apellido as string | undefined;
-      if (nombre) setNombreNutr(`${nombre}${apellido ? ' ' + apellido : ''}`);
+      const nombre   = user.user_metadata?.nombre    as string | undefined;
+      const apellido = user.user_metadata?.apellido  as string | undefined;
+      const avatar   = user.user_metadata?.avatar_url as string | undefined;
+      if (nombre) {
+        const nombreCompleto = `${nombre}${apellido ? ' ' + apellido : ''}`;
+        setNombreNutr(nombreCompleto);
+        setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
+      }
+      if (avatar) setAvatarUrl(avatar);
     });
   }, []);
 
@@ -133,8 +141,16 @@ export default function Sidebar({ expanded, animated, onToggle }: SidebarProps) 
         expanded ? 'p-4' : 'p-3',
       )}>
         <div className={cn('flex items-center', expanded ? 'gap-3' : 'justify-center')}>
-          <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-sm flex-shrink-0">
-            👤
+          {/* Avatar */}
+          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-brand-600 flex items-center justify-center">
+                <span className="text-white text-xs font-bold">{iniciales}</span>
+              </div>
+            )}
           </div>
           {expanded && (
             <div className="flex-1 min-w-0 overflow-hidden">

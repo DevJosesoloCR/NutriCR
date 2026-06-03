@@ -87,6 +87,7 @@ export interface Database {
           nombre: string;
           apellido: string | null;
           tipo_usuario: 'nutriologo' | 'paciente';
+          avatar_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -96,6 +97,7 @@ export interface Database {
           nombre: string;
           apellido?: string | null;
           tipo_usuario: 'nutriologo' | 'paciente';
+          avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -105,6 +107,7 @@ export interface Database {
           nombre?: string;
           apellido?: string | null;
           tipo_usuario?: 'nutriologo' | 'paciente';
+          avatar_url?: string | null;
           updated_at?: string;
         };
         Relationships: [];
