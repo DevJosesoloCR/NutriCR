@@ -62,10 +62,17 @@ interface PacienteDetalle {
   email: string;
   objetivo: string | null;
   condiciones_medicas: string[];
-  alergias: string[];             // ← nuevo
+  alergias: string[];
   peso: number | null;
   altura: number | null;
   fecha_nacimiento: string | null;
+  // Datos extendidos de perfil
+  sexo:            'masculino' | 'femenino' | null;
+  estatura_cm:     number | null;
+  peso_meta_kg:    number | null;
+  nivel_actividad: string | null;
+  ocupacion:       string | null;
+  telefono:        string | null;
 }
 
 interface PlanNutricional {
@@ -115,10 +122,16 @@ const MOCK_PACIENTE: PacienteDetalle = {
   email:               'ana.gonzalez@email.com',
   objetivo:            'Bajar grasa',
   condiciones_medicas: ['Hipotiroidismo', 'Resistencia a la insulina'],
-  alergias:            ['Mariscos', 'Nueces'],   // ← nuevo
+  alergias:            ['Mariscos', 'Nueces'],
   peso:                68.8,
   altura:              1.62,
   fecha_nacimiento:    '1990-04-15',
+  sexo:                'femenino',
+  estatura_cm:         162,
+  peso_meta_kg:        60,
+  nivel_actividad:     'moderado',
+  ocupacion:           'Oficinista',
+  telefono:            null,
 };
 
 const MOCK_MEDICIONES: MedicionInbody[] = [
@@ -1067,7 +1080,68 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          2. INBODY
+          2. DATOS DEL PACIENTE
+      ══════════════════════════════════════════════════════════════════════ */}
+      {paciente && (paciente.sexo || paciente.estatura_cm || paciente.peso_meta_kg || paciente.nivel_actividad || paciente.ocupacion || paciente.telefono) && (
+        <SectionCard title="Datos del paciente" icon="👤">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            {paciente.fecha_nacimiento && (() => {
+              const hoy  = new Date();
+              const nac  = new Date(paciente.fecha_nacimiento!);
+              let edad   = hoy.getFullYear() - nac.getFullYear();
+              const m    = hoy.getMonth() - nac.getMonth();
+              if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
+              return (
+                <div>
+                  <p className="text-xs text-slate-400">Edad</p>
+                  <p className="text-sm font-semibold text-slate-800">{edad} años</p>
+                </div>
+              );
+            })()}
+            {paciente.sexo && (
+              <div>
+                <p className="text-xs text-slate-400">Sexo</p>
+                <p className="text-sm font-semibold text-slate-800 capitalize">{paciente.sexo}</p>
+              </div>
+            )}
+            {paciente.estatura_cm && (
+              <div>
+                <p className="text-xs text-slate-400">Estatura</p>
+                <p className="text-sm font-semibold text-slate-800">{paciente.estatura_cm} cm</p>
+              </div>
+            )}
+            {paciente.peso_meta_kg && (
+              <div>
+                <p className="text-xs text-slate-400">Peso meta</p>
+                <p className="text-sm font-semibold text-slate-800">{paciente.peso_meta_kg} kg</p>
+              </div>
+            )}
+            {paciente.nivel_actividad && (
+              <div>
+                <p className="text-xs text-slate-400">Actividad física</p>
+                <p className="text-sm font-semibold text-slate-800 capitalize">
+                  {paciente.nivel_actividad.replace('_', ' ')}
+                </p>
+              </div>
+            )}
+            {paciente.ocupacion && (
+              <div>
+                <p className="text-xs text-slate-400">Ocupación</p>
+                <p className="text-sm font-semibold text-slate-800">{paciente.ocupacion}</p>
+              </div>
+            )}
+            {paciente.telefono && (
+              <div>
+                <p className="text-xs text-slate-400">Teléfono</p>
+                <p className="text-sm font-semibold text-slate-800">{paciente.telefono}</p>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          3. INBODY
       ══════════════════════════════════════════════════════════════════════ */}
       <SectionCard
         title="InBody — Evolución corporal"

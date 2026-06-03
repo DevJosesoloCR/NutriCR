@@ -14,6 +14,36 @@ interface NutriologoInfo {
   codigoInvitacion: string | null;
 }
 
+type NivelActividad = 'sedentario' | 'ligero' | 'moderado' | 'activo' | 'muy_activo';
+
+interface DatosPerfil {
+  fecha_nacimiento: string;
+  sexo:             'masculino' | 'femenino' | '';
+  estatura_cm:      string;
+  peso_meta_kg:     string;
+  nivel_actividad:  NivelActividad | '';
+  ocupacion:        string;
+  telefono:         string;
+}
+
+const NIVEL_ACTIVIDAD_LABELS: Record<NivelActividad, string> = {
+  sedentario: 'Sedentario',
+  ligero:     'Ligero',
+  moderado:   'Moderado',
+  activo:     'Activo',
+  muy_activo: 'Muy activo',
+};
+
+function calcularEdad(fechaNacimiento: string): number | null {
+  if (!fechaNacimiento) return null;
+  const hoy  = new Date();
+  const nac  = new Date(fechaNacimiento);
+  let edad   = hoy.getFullYear() - nac.getFullYear();
+  const m    = hoy.getMonth() - nac.getMonth();
+  if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
+  return edad;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Auto-formatea el input del código a XXXX-XXXX mientras el usuario escribe. */
@@ -31,6 +61,67 @@ export default function PerfilPage() {
   const [user,       setUser]      = useState<User | null>(null);
   const [loading,    setLoading]   = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // ── Mis datos (biométricos) ──────────────────────────────────────────────────
+  const EMPTY_DATOS: DatosPerfil = {
+    fecha_nacimiento: '', sexo: '', estatura_cm: '',
+    peso_meta_kg: '', nivel_actividad: '', ocupacion: '', telefono: '',
+  };
+  const [datos,        setDatos]        = useState<DatosPerfil>(EMPTY_DATOS);
+  const [cargandoDatos, setCargandoDatos] = useState(true);
+  const [guardandoDatos, setGuardandoDatos] = useState(false);
+  const [datosError,   setDatosError]   = useState<string | null>(null);
+  const [datosOk,      setDatosOk]      = useState(false);
+
+  useEffect(() => {
+    fetch('/api/paciente/perfil')
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (json?.data) {
+          const d = json.data;
+          setDatos({
+            fecha_nacimiento: d.fecha_nacimiento ?? '',
+            sexo:             d.sexo             ?? '',
+            estatura_cm:      d.estatura_cm      != null ? String(d.estatura_cm)  : '',
+            peso_meta_kg:     d.peso_meta_kg     != null ? String(d.peso_meta_kg) : '',
+            nivel_actividad:  d.nivel_actividad  ?? '',
+            ocupacion:        d.ocupacion        ?? '',
+            telefono:         d.telefono         ?? '',
+          });
+        }
+      })
+      .finally(() => setCargandoDatos(false));
+  }, []);
+
+  async function handleGuardarDatos(e: React.FormEvent) {
+    e.preventDefault();
+    setGuardandoDatos(true);
+    setDatosError(null);
+    setDatosOk(false);
+    try {
+      const res = await fetch('/api/paciente/perfil', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fecha_nacimiento: datos.fecha_nacimiento || null,
+          sexo:             datos.sexo             || null,
+          estatura_cm:      datos.estatura_cm      ? parseFloat(datos.estatura_cm)  : null,
+          peso_meta_kg:     datos.peso_meta_kg     ? parseFloat(datos.peso_meta_kg) : null,
+          nivel_actividad:  datos.nivel_actividad  || null,
+          ocupacion:        datos.ocupacion.trim() || null,
+          telefono:         datos.telefono.trim()  || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setDatosError(json.error ?? 'Error al guardar.'); return; }
+      setDatosOk(true);
+      setTimeout(() => setDatosOk(false), 3000);
+    } catch {
+      setDatosError('Error de conexión. Intentá de nuevo.');
+    } finally {
+      setGuardandoDatos(false);
+    }
+  }
 
   // ── Nutricionista vinculado ───────────────────────────────────────────────────
   const [nutriologo,    setNutriologo]    = useState<NutriologoInfo | null | undefined>(undefined); // undefined = cargando
@@ -194,6 +285,155 @@ export default function PerfilPage() {
             <span className="font-medium text-slate-800 text-sm">{item.value}</span>
           </div>
         ))}
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MIS DATOS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Card className="p-5">
+        <h2 className="font-semibold text-slate-700 flex items-center gap-2 mb-4">
+          <span>📋</span> Mis datos
+        </h2>
+
+        {cargandoDatos ? (
+          <div className="space-y-3">
+            {[1,2,3,4].map((i) => (
+              <div key={i} className="h-10 bg-slate-100 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <form onSubmit={handleGuardarDatos} className="space-y-4">
+
+            {/* Fecha de nacimiento */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                Fecha de nacimiento
+                {datos.fecha_nacimiento && (
+                  <span className="ml-2 text-brand-600 font-semibold">
+                    ({calcularEdad(datos.fecha_nacimiento)} años)
+                  </span>
+                )}
+              </label>
+              <input
+                type="date"
+                value={datos.fecha_nacimiento}
+                onChange={(e) => setDatos((p) => ({ ...p, fecha_nacimiento: e.target.value }))}
+                max={new Date().toISOString().split('T')[0]}
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
+              />
+            </div>
+
+            {/* Sexo biológico */}
+            <div>
+              <p className="text-xs font-medium text-slate-500 mb-2">Sexo biológico</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['masculino', 'femenino'] as const).map((s) => (
+                  <button
+                    key={s} type="button"
+                    onClick={() => setDatos((p) => ({ ...p, sexo: s }))}
+                    className={`py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
+                      datos.sexo === s
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
+                    }`}
+                  >
+                    {s === 'masculino' ? '♂ Masculino' : '♀ Femenino'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Estatura y Peso meta */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">Estatura (cm)</label>
+                <input
+                  type="number" min="100" max="250" step="0.1"
+                  value={datos.estatura_cm}
+                  onChange={(e) => setDatos((p) => ({ ...p, estatura_cm: e.target.value }))}
+                  placeholder="170"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">Peso meta (kg)</label>
+                <input
+                  type="number" min="30" max="300" step="0.1"
+                  value={datos.peso_meta_kg}
+                  onChange={(e) => setDatos((p) => ({ ...p, peso_meta_kg: e.target.value }))}
+                  placeholder="65"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Nivel de actividad */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Nivel de actividad física</label>
+              <select
+                value={datos.nivel_actividad}
+                onChange={(e) => setDatos((p) => ({ ...p, nivel_actividad: e.target.value as NivelActividad | '' }))}
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
+              >
+                <option value="">Seleccionar…</option>
+                {(Object.entries(NIVEL_ACTIVIDAD_LABELS) as [NivelActividad, string][]).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Ocupación */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Ocupación</label>
+              <input
+                type="text"
+                value={datos.ocupacion}
+                onChange={(e) => setDatos((p) => ({ ...p, ocupacion: e.target.value }))}
+                placeholder="Ej: Oficinista, Ama de casa, Estudiante…"
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
+              />
+            </div>
+
+            {/* Teléfono */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Teléfono</label>
+              <input
+                type="tel"
+                value={datos.telefono}
+                onChange={(e) => setDatos((p) => ({ ...p, telefono: e.target.value }))}
+                placeholder="8888-8888"
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all"
+              />
+            </div>
+
+            {datosError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 flex items-center gap-1.5">
+                <span>⚠️</span> {datosError}
+              </p>
+            )}
+            {datosOk && (
+              <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5 flex items-center gap-1.5 font-medium">
+                <span>✅</span> Datos guardados correctamente
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={guardandoDatos}
+              className="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              {guardandoDatos ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                  </svg>
+                  Guardando…
+                </>
+              ) : 'Guardar cambios'}
+            </button>
+          </form>
+        )}
       </Card>
 
       {/* ══════════════════════════════════════════════════════════════════════

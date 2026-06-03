@@ -110,6 +110,19 @@ export async function GET(
       peso:                paciente.peso,
       altura:              paciente.altura,
       fecha_nacimiento:    paciente.fecha_nacimiento,
+      // Datos extendidos de perfil
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sexo:            (paciente as any).sexo            ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      estatura_cm:     (paciente as any).estatura_cm     ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      peso_meta_kg:    (paciente as any).peso_meta_kg    ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      nivel_actividad: (paciente as any).nivel_actividad ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ocupacion:       (paciente as any).ocupacion       ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      telefono:        (paciente as any).telefono        ?? null,
     },
     plan: plan ?? null,
     adherencia,

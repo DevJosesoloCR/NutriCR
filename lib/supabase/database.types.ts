@@ -119,6 +119,7 @@ export interface Database {
           descripcion: string | null;
           foto_url: string | null;
           codigo_invitacion: string | null;
+          telefono: string | null;
           created_at: string;
         };
         Insert: {
@@ -129,6 +130,7 @@ export interface Database {
           descripcion?: string | null;
           foto_url?: string | null;
           codigo_invitacion?: string | null;
+          telefono?: string | null;
           created_at?: string;
         };
         Update: {
@@ -139,6 +141,7 @@ export interface Database {
           descripcion?: string | null;
           foto_url?: string | null;
           codigo_invitacion?: string | null;
+          telefono?: string | null;
         };
         Relationships: [
           {
@@ -162,6 +165,12 @@ export interface Database {
           objetivo: string | null;
           alergias: string[] | null;
           condiciones_medicas: string[] | null;
+          sexo: 'masculino' | 'femenino' | null;
+          estatura_cm: number | null;
+          peso_meta_kg: number | null;
+          nivel_actividad: 'sedentario' | 'ligero' | 'moderado' | 'activo' | 'muy_activo' | null;
+          ocupacion: string | null;
+          telefono: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -175,6 +184,12 @@ export interface Database {
           objetivo?: string | null;
           alergias?: string[] | null;
           condiciones_medicas?: string[] | null;
+          sexo?: 'masculino' | 'femenino' | null;
+          estatura_cm?: number | null;
+          peso_meta_kg?: number | null;
+          nivel_actividad?: 'sedentario' | 'ligero' | 'moderado' | 'activo' | 'muy_activo' | null;
+          ocupacion?: string | null;
+          telefono?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -188,6 +203,12 @@ export interface Database {
           objetivo?: string | null;
           alergias?: string[] | null;
           condiciones_medicas?: string[] | null;
+          sexo?: 'masculino' | 'femenino' | null;
+          estatura_cm?: number | null;
+          peso_meta_kg?: number | null;
+          nivel_actividad?: 'sedentario' | 'ligero' | 'moderado' | 'activo' | 'muy_activo' | null;
+          ocupacion?: string | null;
+          telefono?: string | null;
           updated_at?: string;
         };
         Relationships: [
