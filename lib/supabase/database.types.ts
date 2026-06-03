@@ -574,16 +574,20 @@ export interface Database {
         Row: {
           id: string;
           paciente_id: string;
-          foto_url: string;
+          foto_url: string | null;
           descripcion: string | null;
+          descripcion_texto: string | null;
+          tipo_comida: 'desayuno' | 'almuerzo' | 'cena' | 'merienda' | null;
           revisada: boolean;
           created_at: string;
         };
         Insert: {
           id?: string;
           paciente_id: string;
-          foto_url: string;
+          foto_url?: string | null;
           descripcion?: string | null;
+          descripcion_texto?: string | null;
+          tipo_comida?: 'desayuno' | 'almuerzo' | 'cena' | 'merienda' | null;
           revisada?: boolean;
           created_at?: string;
         };
@@ -591,6 +595,8 @@ export interface Database {
           id?: string;
           revisada?: boolean;
           descripcion?: string | null;
+          descripcion_texto?: string | null;
+          tipo_comida?: 'desayuno' | 'almuerzo' | 'cena' | 'merienda' | null;
         };
         Relationships: [
           {

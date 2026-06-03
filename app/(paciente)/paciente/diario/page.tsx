@@ -2,12 +2,23 @@
 
 import { useState, useEffect, useRef } from 'react';
 
+type TipoComida = 'desayuno' | 'almuerzo' | 'cena' | 'merienda';
+
 interface EntradaDiario {
   id: string;
-  foto_url: string;
+  foto_url: string | null;
   descripcion: string | null;
+  descripcion_texto: string | null;
+  tipo_comida: TipoComida | null;
   created_at: string;
 }
+
+const TIPOS: { value: TipoComida; label: string; emoji: string }[] = [
+  { value: 'desayuno',  label: 'Desayuno',  emoji: '🌅' },
+  { value: 'almuerzo',  label: 'Almuerzo',  emoji: '☀️'  },
+  { value: 'cena',      label: 'Cena',      emoji: '🌙' },
+  { value: 'merienda',  label: 'Merienda',  emoji: '🍎' },
+];
 
 function formatFecha(iso: string) {
   const d = new Date(iso);
@@ -17,17 +28,10 @@ function formatFecha(iso: string) {
 }
 
 // ─── Conversión + compresión a JPEG via canvas ───────────────────────────────
-// • Convierte cualquier formato (HEIC, HEIF, PNG, WEBP, JPG, …) a JPEG.
-// • Escala al máximo de MAX_PX en el lado más largo, manteniendo la proporción.
-// • Calidad 0.80 → archivos típicos de 200-600 KB, bien por debajo del límite.
-// iOS puede mostrar HEIC en <img> de forma nativa, así que la carga funciona
-// en Safari; canvas luego exporta el contenido como JPEG estándar.
-
-const MAX_PX   = 1920;
-const JPEG_Q   = 0.80;
+const MAX_PX = 1920;
+const JPEG_Q = 0.80;
 
 async function toJpegBlob(file: File): Promise<Blob> {
-  // 1. Cargar el archivo en un elemento <img>
   const objectUrl = URL.createObjectURL(file);
 
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -41,20 +45,13 @@ async function toJpegBlob(file: File): Promise<Blob> {
     throw new Error('La imagen no tiene dimensiones válidas');
   }
 
-  // 2. Calcular dimensiones con cap de MAX_PX en el lado mayor
   let w = img.naturalWidth;
   let h = img.naturalHeight;
   if (w > MAX_PX || h > MAX_PX) {
-    if (w >= h) {
-      h = Math.round(h * MAX_PX / w);
-      w = MAX_PX;
-    } else {
-      w = Math.round(w * MAX_PX / h);
-      h = MAX_PX;
-    }
+    if (w >= h) { h = Math.round(h * MAX_PX / w); w = MAX_PX; }
+    else        { w = Math.round(w * MAX_PX / h); h = MAX_PX; }
   }
 
-  // 3. Dibujar en canvas con las dimensiones finales
   const canvas = document.createElement('canvas');
   canvas.width  = w;
   canvas.height = h;
@@ -62,12 +59,9 @@ async function toJpegBlob(file: File): Promise<Blob> {
   if (!ctx) throw new Error('Canvas no disponible en este dispositivo');
   ctx.drawImage(img, 0, 0, w, h);
 
-  // 4. Exportar como JPEG
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
-      (blob) => blob
-        ? resolve(blob)
-        : reject(new Error('Error al generar el JPEG desde canvas')),
+      (blob) => blob ? resolve(blob) : reject(new Error('Error al generar el JPEG')),
       'image/jpeg',
       JPEG_Q,
     );
@@ -80,17 +74,27 @@ export default function DiarioPage() {
   const cameraInputRef  = useRef<HTMLInputElement>(null);
   const galeriaInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Estado foto ──────────────────────────────────────────────────────────────
   const [preview,      setPreview]      = useState<string | null>(null);
-  const [blob,         setBlob]         = useState<Blob | null>(null);   // JPEG listo para subir
+  const [blob,         setBlob]         = useState<Blob | null>(null);
   const [descripcion,  setDesc]         = useState('');
-  const [convirtiendo, setConvirtiendo] = useState(false);  // procesando HEIC → JPEG
+  const [convirtiendo, setConvirtiendo] = useState(false);
   const [subiendo,     setSubiendo]     = useState(false);
-  const [errorMsg,     setErrorMsg]     = useState<string | null>(null);
+  const [errorFoto,    setErrorFoto]    = useState<string | null>(null);
+
+  // ── Estado texto ─────────────────────────────────────────────────────────────
+  const [textoComida,    setTextoComida]    = useState('');
+  const [tipoComida,     setTipoComida]     = useState<TipoComida>('almuerzo');
+  const [guardandoTexto, setGuardandoTexto] = useState(false);
+  const [errorTexto,     setErrorTexto]     = useState<string | null>(null);
+  const [okTexto,        setOkTexto]        = useState(false);
+
+  // ── Historial ────────────────────────────────────────────────────────────────
   const [historial,    setHistorial]    = useState<EntradaDiario[]>([]);
   const [cargando,     setCargando]     = useState(true);
   const [fotoAmpliada, setFotoAmpliada] = useState<EntradaDiario | null>(null);
 
-  // ── Cargar historial ────────────────────────────────────────────────────────
+  // ── Cargar historial ─────────────────────────────────────────────────────────
   async function cargarHistorial() {
     setCargando(true);
     try {
@@ -104,29 +108,27 @@ export default function DiarioPage() {
 
   useEffect(() => { cargarHistorial(); }, []);
 
-  // ── Seleccionar archivo → convertir a JPEG ──────────────────────────────────
+  // ── Foto: seleccionar archivo ─────────────────────────────────────────────────
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0];
     if (!selected) return;
 
     if (selected.size > 10 * 1024 * 1024) {
-      setErrorMsg('La imagen no puede superar 10 MB.');
+      setErrorFoto('La imagen no puede superar 10 MB.');
       return;
     }
 
-    setErrorMsg(null);
+    setErrorFoto(null);
     setConvirtiendo(true);
 
     try {
       const jpeg = await toJpegBlob(selected);
       setBlob(jpeg);
-
-      // Generar preview a partir del JPEG convertido
       const reader = new FileReader();
       reader.onloadend = () => setPreview(reader.result as string);
       reader.readAsDataURL(jpeg);
     } catch (err) {
-      setErrorMsg('No se pudo procesar la imagen. Intenta con otra foto.');
+      setErrorFoto('No se pudo procesar la imagen. Intenta con otra foto.');
       console.error('[diario] toJpegBlob:', err);
     } finally {
       setConvirtiendo(false);
@@ -137,37 +139,62 @@ export default function DiarioPage() {
     setPreview(null);
     setBlob(null);
     setDesc('');
-    setErrorMsg(null);
+    setErrorFoto(null);
     if (cameraInputRef.current)  cameraInputRef.current.value  = '';
     if (galeriaInputRef.current) galeriaInputRef.current.value = '';
   }
 
-  // ── Subir foto (ya convertida a JPEG) ──────────────────────────────────────
-  async function handleSubir() {
+  // ── Foto: subir ───────────────────────────────────────────────────────────────
+  async function handleSubirFoto() {
     if (!blob) return;
     setSubiendo(true);
-    setErrorMsg(null);
+    setErrorFoto(null);
 
     try {
       const fd = new FormData();
-      // Nombre siempre .jpg; el blob ya es image/jpeg
       fd.append('file', blob, 'foto.jpg');
       if (descripcion.trim()) fd.append('descripcion', descripcion.trim());
 
       const res  = await fetch('/api/diario', { method: 'POST', body: fd });
       const json = await res.json();
 
-      if (!res.ok) {
-        setErrorMsg(json.error ?? 'Error al subir la foto.');
-        return;
-      }
+      if (!res.ok) { setErrorFoto(json.error ?? 'Error al subir la foto.'); return; }
 
-      setHistorial((prev) => [json.data, ...prev].slice(0, 10));
+      setHistorial((prev) => [json.data, ...prev].slice(0, 20));
       cancelarPreview();
     } catch {
-      setErrorMsg('Error de conexión. Intentá de nuevo.');
+      setErrorFoto('Error de conexión. Intentá de nuevo.');
     } finally {
       setSubiendo(false);
+    }
+  }
+
+  // ── Texto: guardar ────────────────────────────────────────────────────────────
+  async function handleGuardarTexto() {
+    if (!textoComida.trim()) { setErrorTexto('Escribí qué comiste.'); return; }
+
+    setGuardandoTexto(true);
+    setErrorTexto(null);
+
+    try {
+      const res  = await fetch('/api/diario', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ texto: textoComida.trim(), tipo_comida: tipoComida }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) { setErrorTexto(json.error ?? 'Error al guardar.'); return; }
+
+      setHistorial((prev) => [json.data, ...prev].slice(0, 20));
+      setTextoComida('');
+      setTipoComida('almuerzo');
+      setOkTexto(true);
+      setTimeout(() => setOkTexto(false), 2500);
+    } catch {
+      setErrorTexto('Error de conexión. Intentá de nuevo.');
+    } finally {
+      setGuardandoTexto(false);
     }
   }
 
@@ -175,13 +202,12 @@ export default function DiarioPage() {
     <div className="space-y-5 pb-4">
       <div>
         <h2 className="text-lg font-bold text-slate-800">Registro de comidas</h2>
-        <p className="text-sm text-slate-400 mt-0.5">Fotografiá lo que comés para que tu nutricionista pueda verlo</p>
+        <p className="text-sm text-slate-400 mt-0.5">Fotografiá o anotá lo que comés para que tu nutricionista pueda verlo</p>
       </div>
 
       {/* ── Zona de captura ── */}
       {convirtiendo ? (
 
-        /* ── Procesando imagen (HEIC → JPEG) ── */
         <div className="border-2 border-dashed border-brand-200 rounded-2xl bg-brand-50 flex flex-col items-center justify-center gap-3 py-12">
           <svg className="animate-spin h-8 w-8 text-brand-400" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -193,69 +219,127 @@ export default function DiarioPage() {
 
       ) : !preview ? (
 
-        /* ── Botones de captura ── */
-        <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-3">
+        /* ── Botones de captura + formulario manual ── */
+        <div className="space-y-4">
 
-            {/* Tomar foto */}
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => cameraInputRef.current?.click()}
-              onKeyDown={(e) => e.key === 'Enter' && cameraInputRef.current?.click()}
-              className="border-2 border-dashed border-brand-200 rounded-2xl bg-brand-50 flex flex-col items-center justify-center gap-2.5 py-8 cursor-pointer active:bg-brand-100 transition-colors select-none"
-            >
-              <span className="text-4xl">📷</span>
-              <div className="text-center">
-                <p className="text-sm font-bold text-brand-700">Tomar foto</p>
-                <p className="text-[11px] text-brand-400 mt-0.5">Abre la cámara</p>
+          {/* Foto */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div
+                role="button" tabIndex={0}
+                onClick={() => cameraInputRef.current?.click()}
+                onKeyDown={(e) => e.key === 'Enter' && cameraInputRef.current?.click()}
+                className="border-2 border-dashed border-brand-200 rounded-2xl bg-brand-50 flex flex-col items-center justify-center gap-2.5 py-8 cursor-pointer active:bg-brand-100 transition-colors select-none"
+              >
+                <span className="text-4xl">📷</span>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-brand-700">Tomar foto</p>
+                  <p className="text-[11px] text-brand-400 mt-0.5">Abre la cámara</p>
+                </div>
+                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
               </div>
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleFileChange}
-              />
+
+              <div
+                role="button" tabIndex={0}
+                onClick={() => galeriaInputRef.current?.click()}
+                onKeyDown={(e) => e.key === 'Enter' && galeriaInputRef.current?.click()}
+                className="border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center gap-2.5 py-8 cursor-pointer active:bg-slate-100 transition-colors select-none"
+              >
+                <span className="text-4xl">🖼️</span>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-slate-600">Elegir foto</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Desde galería</p>
+                </div>
+                <input ref={galeriaInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+              </div>
             </div>
 
-            {/* Elegir de galería */}
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => galeriaInputRef.current?.click()}
-              onKeyDown={(e) => e.key === 'Enter' && galeriaInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center gap-2.5 py-8 cursor-pointer active:bg-slate-100 transition-colors select-none"
-            >
-              <span className="text-4xl">🖼️</span>
-              <div className="text-center">
-                <p className="text-sm font-bold text-slate-600">Elegir foto</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Desde galería</p>
-              </div>
-              <input
-                ref={galeriaInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-            </div>
-
+            {errorFoto && (
+              <p className="text-xs text-red-500 flex items-center gap-1"><span>⚠️</span> {errorFoto}</p>
+            )}
+            <p className="text-center text-[11px] text-slate-300">JPG · PNG · HEIC · WEBP — máximo 10 MB</p>
           </div>
 
-          {errorMsg && (
-            <p className="text-xs text-red-500 flex items-center gap-1">
-              <span>⚠️</span> {errorMsg}
-            </p>
-          )}
+          {/* ── Separador ── */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-slate-100" />
+            <p className="text-xs text-slate-400 whitespace-nowrap">o registrá manualmente</p>
+            <div className="flex-1 h-px bg-slate-100" />
+          </div>
 
-          <p className="text-center text-[11px] text-slate-300">JPG · PNG · HEIC · WEBP — máximo 10 MB</p>
+          {/* ── Formulario de texto ── */}
+          <div className="bg-slate-50 rounded-2xl p-4 space-y-3 border border-slate-100">
+
+            {/* Campo texto */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                ¿Qué comiste?
+              </label>
+              <textarea
+                value={textoComida}
+                onChange={(e) => setTextoComida(e.target.value.slice(0, 200))}
+                placeholder="Ej: Arroz con pollo, ensalada verde y agua"
+                rows={2}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all resize-none text-slate-800 placeholder:text-slate-300"
+              />
+              <p className="text-right text-[10px] text-slate-300 mt-0.5">{textoComida.length}/200</p>
+            </div>
+
+            {/* Selector tipo de comida */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-2">Tiempo de comida</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {TIPOS.map((t) => (
+                  <button
+                    key={t.value}
+                    onClick={() => setTipoComida(t.value)}
+                    className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
+                      tipoComida === t.value
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-white text-slate-500 border border-slate-200 active:bg-slate-100'
+                    }`}
+                  >
+                    <span className="text-base">{t.emoji}</span>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Error / confirmación */}
+            {errorTexto && (
+              <p className="text-xs text-red-500 flex items-center gap-1"><span>⚠️</span> {errorTexto}</p>
+            )}
+            {okTexto && (
+              <p className="text-xs text-green-600 flex items-center gap-1 font-medium">
+                <span>✅</span> ¡Registrado correctamente!
+              </p>
+            )}
+
+            {/* Botón */}
+            <button
+              onClick={handleGuardarTexto}
+              disabled={guardandoTexto || !textoComida.trim()}
+              className="w-full bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              {guardandoTexto ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                  Guardando…
+                </>
+              ) : (
+                <>✏️ Registrar sin foto</>
+              )}
+            </button>
+          </div>
         </div>
 
       ) : (
 
-        /* ── Preview antes de subir ── */
+        /* ── Preview antes de subir foto ── */
         <div className="space-y-3">
           <div className="relative rounded-2xl overflow-hidden bg-slate-100 aspect-square w-full max-w-sm mx-auto">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -268,7 +352,6 @@ export default function DiarioPage() {
             </button>
           </div>
 
-          {/* Campo descripción */}
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1.5">
               ¿Qué estás comiendo? <span className="text-slate-300">(opcional)</span>
@@ -279,7 +362,7 @@ export default function DiarioPage() {
                 value={descripcion}
                 onChange={(e) => setDesc(e.target.value.slice(0, 100))}
                 placeholder="Ej: Almuerzo con arroz, pollo y ensalada"
-                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 pr-12 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all text-[#111827] placeholder:text-[#9CA3AF]"
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 pr-12 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-300 transition-all text-slate-800 placeholder:text-slate-300"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-300">
                 {descripcion.length}/100
@@ -287,14 +370,12 @@ export default function DiarioPage() {
             </div>
           </div>
 
-          {errorMsg && (
-            <p className="text-xs text-red-500 flex items-center gap-1">
-              <span>⚠️</span> {errorMsg}
-            </p>
+          {errorFoto && (
+            <p className="text-xs text-red-500 flex items-center gap-1"><span>⚠️</span> {errorFoto}</p>
           )}
 
           <button
-            onClick={handleSubir}
+            onClick={handleSubirFoto}
             disabled={subiendo}
             className="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-brand-400 text-white font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
           >
@@ -313,48 +394,77 @@ export default function DiarioPage() {
         </div>
       )}
 
-      {/* ── Historial ── */}
+      {/* ── Historial mixto (fotos + texto) ── */}
       <div>
-        <h3 className="text-sm font-semibold text-slate-600 mb-3">Últimas fotos</h3>
+        <h3 className="text-sm font-semibold text-slate-600 mb-3">Últimas entradas</h3>
 
         {cargando ? (
-          <div className="grid grid-cols-3 gap-2">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="aspect-square rounded-xl bg-slate-100 animate-pulse" />
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-16 rounded-xl bg-slate-100 animate-pulse" />
             ))}
           </div>
         ) : historial.length === 0 ? (
           <div className="text-center py-10 text-slate-400">
             <span className="text-3xl block mb-2">🍽️</span>
-            <p className="text-sm">Aún no subiste ninguna foto</p>
+            <p className="text-sm">Aún no registraste ninguna comida</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-2">
-            {historial.map((entry) => (
-              <button
-                key={entry.id}
-                onClick={() => setFotoAmpliada(entry)}
-                className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 group"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={entry.foto_url}
-                  alt={entry.descripcion ?? 'Foto de comida'}
-                  className="w-full h-full object-cover group-active:scale-95 transition-transform"
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-1.5">
-                  <p className="text-white text-[10px] leading-tight">
-                    {new Date(entry.created_at).toLocaleDateString('es-CR', { day: 'numeric', month: 'short' })}
-                  </p>
+          <div className="space-y-2">
+            {historial.map((entry) =>
+              entry.foto_url ? (
+                /* ── Entrada con foto ── */
+                <button
+                  key={entry.id}
+                  onClick={() => setFotoAmpliada(entry)}
+                  className="w-full flex items-center gap-3 bg-white border border-slate-100 rounded-xl p-2 active:bg-slate-50 transition-colors text-left"
+                >
+                  {/* Thumbnail */}
+                  <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={entry.foto_url} alt="" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-700 truncate">
+                      {entry.descripcion ?? 'Foto de comida'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{formatFecha(entry.created_at)}</p>
+                  </div>
+                  <span className="text-slate-300 text-lg flex-shrink-0">📷</span>
+                </button>
+              ) : (
+                /* ── Entrada de texto ── */
+                <div
+                  key={entry.id}
+                  className="w-full flex items-center gap-3 bg-white border border-slate-100 rounded-xl p-3"
+                >
+                  {/* Ícono tipo comida */}
+                  <div className="w-14 h-14 rounded-lg bg-slate-50 flex flex-col items-center justify-center flex-shrink-0 border border-slate-100">
+                    <span className="text-xl">
+                      {TIPOS.find((t) => t.value === entry.tipo_comida)?.emoji ?? '✏️'}
+                    </span>
+                    {entry.tipo_comida && (
+                      <span className="text-[9px] text-slate-400 font-medium capitalize mt-0.5">
+                        {entry.tipo_comida}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-700 leading-snug line-clamp-2">
+                      {entry.descripcion_texto}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">{formatFecha(entry.created_at)}</p>
+                  </div>
+                  <span className="text-slate-300 text-base flex-shrink-0">✏️</span>
                 </div>
-              </button>
-            ))}
+              )
+            )}
           </div>
         )}
       </div>
 
       {/* ── Modal foto ampliada ── */}
-      {fotoAmpliada && (
+      {fotoAmpliada?.foto_url && (
         <div
           className="fixed inset-0 bg-black/85 z-50 flex flex-col items-center justify-center p-4"
           onClick={() => setFotoAmpliada(null)}

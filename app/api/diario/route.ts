@@ -5,7 +5,7 @@ import { requirePaciente } from '@/lib/supabase/auth-helpers';
 const BUCKET = 'diario-comidas';
 
 // ─── GET /api/diario ──────────────────────────────────────────────────────────
-// Devuelve las últimas 10 fotos del paciente autenticado.
+// Devuelve las últimas 20 entradas del paciente (fotos y texto).
 
 export async function GET() {
   const auth = await requirePaciente();
@@ -13,21 +13,64 @@ export async function GET() {
 
   const { data, error } = await createAdminClient()
     .from('diario_comidas')
-    .select('id, foto_url, descripcion, created_at')
+    .select('id, foto_url, descripcion, descripcion_texto, tipo_comida, created_at')
     .eq('paciente_id', auth.data.pacienteId)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(20);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ data: data ?? [] });
 }
 
 // ─── POST /api/diario ─────────────────────────────────────────────────────────
-// Recibe multipart/form-data con 'file' (imagen) y 'descripcion' (opcional).
-// Sube la imagen a Storage y guarda los metadatos en diario_comidas.
+// Acepta dos formatos:
+//   • multipart/form-data { file, descripcion? }    → entrada con foto
+//   • application/json    { texto, tipo_comida? }   → entrada de texto sin foto
 
 export async function POST(request: Request) {
-  const t0 = Date.now();
+  const t0          = Date.now();
+  const contentType = request.headers.get('content-type') ?? '';
+
+  // ── Rama texto (sin foto) ────────────────────────────────────────────────────
+  if (contentType.includes('application/json')) {
+    console.log('[diario] POST texto — iniciando');
+    const auth = await requirePaciente();
+    if (!auth.ok) return auth.response;
+
+    const body = await request.json().catch(() => ({})) as {
+      texto?: string;
+      tipo_comida?: string;
+    };
+
+    const texto      = body.texto?.trim();
+    const tipoComida = body.tipo_comida ?? null;
+
+    if (!texto) {
+      return NextResponse.json({ error: 'El texto no puede estar vacío' }, { status: 400 });
+    }
+
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('diario_comidas')
+      .insert({
+        paciente_id:       auth.data.pacienteId,
+        foto_url:          null,
+        descripcion_texto: texto,
+        tipo_comida:       tipoComida as 'desayuno' | 'almuerzo' | 'cena' | 'merienda' | null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[diario] POST texto — db error:', error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    console.log(`[diario] POST texto — ok | id: ${data.id} | ${Date.now() - t0}ms`);
+    return NextResponse.json({ data }, { status: 201 });
+  }
+
+  // ── Rama foto ────────────────────────────────────────────────────────────────
   console.log('[diario] POST — iniciando');
 
   try {
