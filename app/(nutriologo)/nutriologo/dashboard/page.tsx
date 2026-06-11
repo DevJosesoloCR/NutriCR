@@ -11,6 +11,7 @@ interface PacienteRow {
   nombre: string;
   apellido: string | null;
   email: string;
+  avatar_url: string | null;
   objetivo: string | null;
   adherencia: number;           // 0–100
   estado: string;               // 'Al día' | 'Revisar' | 'Urgente'
@@ -581,8 +582,11 @@ export default function DashboardPage() {
                   <div className="md:hidden px-4 py-4">
                     <div className="flex items-start gap-3">
                       {/* Avatar */}
-                      <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 text-sm font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
-                        {initiales(p.nombre, p.apellido)}
+                      <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 mt-0.5">
+                        {p.avatar_url
+                          ? <img src={p.avatar_url} alt={p.nombre} className="w-full h-full object-cover" />
+                          : <div className="w-full h-full bg-brand-100 text-brand-700 text-sm font-bold flex items-center justify-center">{initiales(p.nombre, p.apellido)}</div>
+                        }
                       </div>
 
                       <div className="flex-1 min-w-0">
@@ -633,8 +637,11 @@ export default function DashboardPage() {
                   <div className="hidden md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.4fr)_104px_92px] gap-4 px-5 py-3.5 items-center">
                     {/* Avatar + nombre + email */}
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 text-sm font-bold flex items-center justify-center flex-shrink-0">
-                        {initiales(p.nombre, p.apellido)}
+                      <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0">
+                        {p.avatar_url
+                          ? <img src={p.avatar_url} alt={p.nombre} className="w-full h-full object-cover" />
+                          : <div className="w-full h-full bg-brand-100 text-brand-700 text-sm font-bold flex items-center justify-center">{initiales(p.nombre, p.apellido)}</div>
+                        }
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-800 truncate">{nombreCompleto}</p>
