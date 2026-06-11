@@ -4,31 +4,38 @@
  * AvatarUploader
  * ──────────────
  * Componente unificado para cambiar la foto de perfil.
- * Compartido entre paciente y nutricionista. Sin dependencias externas
- * de cropper — solo canvas nativo del browser.
+ * Compartido entre paciente y nutricionista. Sin dependencias externas.
  *
  * Flujo:
- *   1. "Subir foto" → file input
- *   2. Preview inmediato en el círculo (URL.createObjectURL)
+ *   1. "Subir foto" → file input (acepta image/*, .heic, .heif)
+ *   2. Conversión inmediata a JPEG con canvas (máx 400×400, calidad 0.85)
+ *      → preview en el círculo desde el primer momento (sin imagen rota)
+ *      → funciona con HEIC en Safari/iOS de forma nativa
  *   3. "Guardar foto":
- *      a. Canvas redimensiona a máx 400×400 px, JPEG calidad 0.8
- *      b. POST /api/user/avatar (multipart) → servidor sube a Storage
- *         con admin client (bypass RLS) y actualiza usuarios.avatar_url
- *      c. onUploadSuccess(url) → padre actualiza el contexto global
- *   4. Muestra "✅ Foto actualizada" 3 s
+ *      POST /api/user/avatar con el blob ya convertido
+ *      → servidor sube a Storage y actualiza usuarios.avatar_url (admin client)
+ *   4. onUploadSuccess(url) → padre actualiza el contexto global
+ *   5. "✅ Foto actualizada" durante 3 s
  *
  * Props (sin dependencia interna de AvatarContext):
- *   userId           – ID del usuario. null mientras auth carga → deshabilita botón
- *   currentAvatarUrl – URL de la DB / contexto (fuente de verdad)
+ *   userId           – ID del usuario (null mientras auth carga → deshabilita botón)
+ *   currentAvatarUrl – URL guardada en DB / contexto (fuente de verdad)
  *   iniciales        – Fallback cuando no hay foto
  *   onUploadSuccess  – Callback con la nueva URL pública
  */
 
 import { useState, useRef } from 'react';
 
-// ─── Helper: redimensionar y convertir a JPEG ─────────────────────────────────
+// ─── Helper: convertir cualquier formato a JPEG vía canvas ───────────────────
+//
+// Carga el archivo en un <img> nativo y lo redibuja en canvas.
+// - PNG, WEBP, GIF → soportados por todos los browsers modernos
+// - HEIC/HEIF → soportado nativamente en Safari (macOS/iOS); en Chrome solo si
+//   el sistema operativo lo decodifica (macOS Monterey+). En Chrome/Windows no
+//   funciona sin librería externa.
+// Si la imagen no se puede cargar, lanza Error para que el llamador lo muestre.
 
-function resizeToJpeg(file: File, maxPx: number, quality: number): Promise<Blob> {
+function convertToJpeg(file: File, maxPx: number, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img       = new Image();
     const objectUrl = URL.createObjectURL(file);
@@ -37,17 +44,29 @@ function resizeToJpeg(file: File, maxPx: number, quality: number): Promise<Blob>
       URL.revokeObjectURL(objectUrl);
 
       const { naturalWidth: sw, naturalHeight: sh } = img;
+
+      if (!sw || !sh) {
+        reject(new Error('La imagen tiene dimensiones inválidas'));
+        return;
+      }
+
       const scale  = Math.min(1, maxPx / Math.max(sw, sh));
-      const w      = Math.round(sw * scale);
-      const h      = Math.round(sh * scale);
+      const w      = Math.max(1, Math.round(sw * scale));
+      const h      = Math.max(1, Math.round(sh * scale));
 
       const canvas = document.createElement('canvas');
       canvas.width  = w;
       canvas.height = h;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('Canvas no disponible')); return; }
+
+      ctx.drawImage(img, 0, 0, w, h);
 
       canvas.toBlob(
-        (b) => b ? resolve(b) : reject(new Error('canvas.toBlob devolvió null')),
+        (b) => b
+          ? resolve(b)
+          : reject(new Error('No se pudo generar el JPEG')),
         'image/jpeg',
         quality,
       );
@@ -55,7 +74,11 @@ function resizeToJpeg(file: File, maxPx: number, quality: number): Promise<Blob>
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error('No se pudo cargar la imagen'));
+      reject(new Error(
+        'No se pudo leer la imagen. ' +
+        'Si es un archivo HEIC, abrilo en Fotos y exportalo como JPG, ' +
+        'o usá Safari en iPhone/Mac.',
+      ));
     };
 
     img.src = objectUrl;
@@ -85,53 +108,65 @@ export default function AvatarUploader({
 }: AvatarUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl,   setPreviewUrl]   = useState<string | null>(null);
-  const [saving,       setSaving]       = useState(false);
-  const [saved,        setSaved]        = useState(false);
-  const [imgError,     setImgError]     = useState(false);
-  const [uploadError,  setUploadError]  = useState<string | null>(null);
+  // Blob JPEG ya convertido (listo para subir)
+  const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
+  // URL del blob convertido (para mostrar el preview)
+  const [previewUrl,    setPreviewUrl]    = useState<string | null>(null);
 
-  // ── Selección de archivo ──────────────────────────────────────────────────
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const [converting,    setConverting]    = useState(false);
+  const [saving,        setSaving]        = useState(false);
+  const [saved,         setSaved]         = useState(false);
+  const [imgError,      setImgError]      = useState(false);
+  const [uploadError,   setUploadError]   = useState<string | null>(null);
 
-    // Revocar el objectURL anterior para evitar fugas de memoria
+  // ── Limpiar estado de selección ───────────────────────────────────────────
+  function clearSelection() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-    setImgError(false);
-    setSaved(false);
-    setUploadError(null);
-  }
-
-  // ── Cancelar selección ────────────────────────────────────────────────────
-  function handleCancel() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setSelectedFile(null);
+    setConvertedBlob(null);
     setPreviewUrl(null);
     setUploadError(null);
-    // Limpiar el input para que vuelva a disparar onChange si se elige el mismo archivo
     if (inputRef.current) inputRef.current.value = '';
   }
 
-  // ── Guardar foto ─────────────────────────────────────────────────────────
+  // ── Selección de archivo → conversión inmediata a JPEG ────────────────────
+  //
+  // Convertimos en este momento (no al guardar) para que:
+  //  a) El preview use siempre un JPEG válido → nunca imagen rota en el browser
+  //  b) Al guardar usamos el blob ya preparado (sin doble conversión)
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    clearSelection();
+    setImgError(false);
+    setSaved(false);
+    setConverting(true);
+
+    try {
+      const blob       = await convertToJpeg(file, 400, 0.85);
+      const blobObjUrl = URL.createObjectURL(blob);
+
+      setConvertedBlob(blob);
+      setPreviewUrl(blobObjUrl);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No se pudo procesar la imagen';
+      console.error('[AvatarUploader] conversión:', err);
+      setUploadError(msg);
+    } finally {
+      setConverting(false);
+    }
+  }
+
+  // ── Guardar foto ──────────────────────────────────────────────────────────
   async function handleSave() {
-    if (!selectedFile || !userId) return;
+    if (!convertedBlob || !userId) return;
 
     setSaving(true);
     setUploadError(null);
 
     try {
-      // a. Redimensionar con canvas: máx 400×400 px, JPEG 0.8
-      const blob = await resizeToJpeg(selectedFile, 400, 0.8);
-
-      // b-d. POST /api/user/avatar — servidor sube a Storage con admin client
-      //      y hace UPDATE en tabla usuarios (bypass RLS, actualización garantizada)
       const fd = new FormData();
-      fd.append('file', blob, 'avatar.jpg');
+      fd.append('file', convertedBlob, 'avatar.jpg');
 
       const res  = await fetch('/api/user/avatar', { method: 'POST', body: fd });
       const json = await res.json() as { url?: string; error?: string };
@@ -139,35 +174,31 @@ export default function AvatarUploader({
       if (!res.ok) throw new Error(json.error ?? `Error HTTP ${res.status}`);
       if (!json.url) throw new Error('El servidor no devolvió URL');
 
-      // e. Actualizar contexto global
       onUploadSuccess(json.url);
-
-      // Limpiar preview
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setSelectedFile(null);
-      setPreviewUrl(null);
-      if (inputRef.current) inputRef.current.value = '';
+      clearSelection();
 
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
 
     } catch (err) {
-      console.error('[AvatarUploader]', err);
-      setUploadError('No se pudo guardar la foto. Intentá de nuevo.');
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      console.error('[AvatarUploader] guardado:', err);
+      setUploadError(`No se pudo guardar la foto: ${msg}`);
     } finally {
       setSaving(false);
     }
   }
 
   // ── Qué mostrar en el círculo ─────────────────────────────────────────────
-  // Prioridad: preview de selección → URL de DB/contexto → iniciales
+  // Prioridad: preview JPEG convertido → URL de DB/contexto → iniciales
   const foto = previewUrl ?? (imgError ? null : currentAvatarUrl);
 
   return (
     <div className="flex flex-col items-center gap-3">
 
-      {/* ── Círculo de foto ── */}
-      <div className="w-[100px] h-[100px] rounded-full overflow-hidden flex-shrink-0">
+      {/* ── Círculo de foto 120 px ── */}
+      <div className="relative w-[120px] h-[120px] rounded-full overflow-hidden flex-shrink-0
+                      bg-brand-600">
         {foto ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -178,16 +209,28 @@ export default function AvatarUploader({
             onError={() => { if (!previewUrl) setImgError(true); }}
           />
         ) : (
-          <div className="w-full h-full bg-brand-600 flex items-center justify-center
+          <div className="w-full h-full flex items-center justify-center
                           text-3xl font-bold text-white select-none">
             {iniciales || 'U'}
           </div>
         )}
+
+        {/* Spinner de conversión superpuesto */}
+        {converting && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <svg className="animate-spin h-7 w-7 text-white" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10"
+                      stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          </div>
+        )}
       </div>
 
-      {/* ── Acciones ── */}
-      {!selectedFile ? (
-        /* Estado: sin foto seleccionada */
+      {/* ── Botones de acción ── */}
+      {!convertedBlob && !converting ? (
+        /* Sin imagen seleccionada */
         <button
           type="button"
           onClick={() => userId && inputRef.current?.click()}
@@ -197,8 +240,8 @@ export default function AvatarUploader({
         >
           Subir foto
         </button>
-      ) : (
-        /* Estado: foto seleccionada — confirmar o cancelar */
+      ) : convertedBlob && !converting ? (
+        /* Imagen convertida lista — confirmar o cancelar */
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -222,7 +265,7 @@ export default function AvatarUploader({
           </button>
           <button
             type="button"
-            onClick={handleCancel}
+            onClick={clearSelection}
             disabled={saving}
             className="px-4 py-1.5 border border-slate-200 text-slate-600 text-sm
                        font-medium rounded-lg hover:bg-slate-50 transition-colors
@@ -231,7 +274,7 @@ export default function AvatarUploader({
             Cancelar
           </button>
         </div>
-      )}
+      ) : null /* converting: el spinner en el círculo ya da feedback */ }
 
       {/* ── Mensajes de estado ── */}
       {saved && (
@@ -240,16 +283,16 @@ export default function AvatarUploader({
         </p>
       )}
       {uploadError && (
-        <p className="text-sm text-red-600 flex items-center gap-1.5">
-          <span>⚠️</span> {uploadError}
+        <p className="text-xs text-red-600 flex items-center gap-1 text-center max-w-[200px]">
+          <span className="flex-shrink-0">⚠️</span> {uploadError}
         </p>
       )}
 
-      {/* Input oculto */}
+      {/* Input oculto — acepta imágenes comunes y HEIC/HEIF */}
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         className="hidden"
         onChange={handleFileChange}
       />
