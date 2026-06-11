@@ -13,9 +13,15 @@
  *   4. ImageCropper se cierra → preview local inmediato mientras sube
  *   5. Upload a Supabase Storage bucket "avatares" con nombre único
  *   6. UPDATE usuarios SET avatar_url → actualiza AvatarContext (persiste en toda la UI)
+ *
+ * El ImageCropper se renderiza via ReactDOM.createPortal en document.body para
+ * escapar cualquier overflow:hidden o stacking context del layout padre
+ * (NutriShell tiene múltiples niveles de overflow:hidden que pueden interferir
+ * con position:fixed en ciertos navegadores).
  */
 
-import { useState, useRef }        from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal }            from 'react-dom';
 import dynamic                     from 'next/dynamic';
 import { useAvatar }               from '@/context/AvatarContext';
 import { createClient }            from '@/lib/supabase/client';
@@ -45,6 +51,10 @@ interface Props {
 export default function AvatarUpload({ iniciales }: Props) {
   const inputRef               = useRef<HTMLInputElement>(null);
   const { avatarUrl, setAvatarUrl } = useAvatar();
+
+  // isMounted: true solo en el cliente — necesario para createPortal (document.body)
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => { setIsMounted(true); }, []);
 
   const [cropSrc,  setCropSrc]  = useState<string | null>(null); // data-URL para el cropper
   const [localUrl, setLocalUrl] = useState<string | null>(null); // preview post-crop mientras sube
@@ -131,13 +141,20 @@ export default function AvatarUpload({ iniciales }: Props) {
 
   return (
     <>
-      {/* Cropper modal — full-screen, z-60 */}
-      {cropSrc && (
+      {/*
+        Cropper modal — renderizado via portal en document.body.
+        Esto garantiza que el modal de recorte (position:fixed) esté fuera del
+        árbol DOM del layout padre, evitando que overflow:hidden o cualquier
+        otro contexto CSS de NutriShell interfiera con su renderizado.
+        El patrón funciona igual para el layout del paciente (es transparente).
+      */}
+      {cropSrc && isMounted && createPortal(
         <ImageCropper
           imageSrc={cropSrc}
           onConfirm={handleCropConfirm}
           onCancel={() => setCropSrc(null)}
-        />
+        />,
+        document.body,
       )}
 
       <div className="flex flex-col items-center gap-3">
