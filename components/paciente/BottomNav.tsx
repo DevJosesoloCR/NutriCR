@@ -10,7 +10,7 @@ import { useAvatar } from '@/context/AvatarContext';
 
 const NAV_ITEMS: { href?: string; label: string; icon: string; fab?: boolean }[] = [
   { href: '/paciente/inicio',   label: 'Inicio',   icon: '🏠' },
-  { href: '/paciente/recetas',  label: 'Recetas',  icon: '🍽️' },
+  { href: '/paciente/plan',     label: 'Plan',     icon: '📋' },
   { fab:  true,                 label: 'Registro', icon: '➕' },
   { href: '/paciente/despensa', label: 'Despensa', icon: '🥫' },
   { href: '/paciente/perfil',   label: 'Perfil',   icon: '👤' },

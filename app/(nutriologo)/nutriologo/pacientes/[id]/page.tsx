@@ -43,6 +43,40 @@ const METRICAS = [
 
 type MetricaKey = (typeof METRICAS)[number]['key'];
 
+// ─── Tipos del plan clínico ───────────────────────────────────────────────────
+
+const TIEMPOS_COMIDA_CONFIG = [
+  { key: 'desayuno'        as const, label: 'Desayuno',        icon: '🌅', defaultHorario: '7:30 AM'  },
+  { key: 'merienda_am'     as const, label: 'Merienda AM',     icon: '☕', defaultHorario: '10:00 AM' },
+  { key: 'almuerzo'        as const, label: 'Almuerzo',        icon: '☀️', defaultHorario: '12:00 PM' },
+  { key: 'merienda_pm'     as const, label: 'Merienda PM',     icon: '🍎', defaultHorario: '3:00 PM'  },
+  { key: 'cena'            as const, label: 'Cena',            icon: '🌙', defaultHorario: '6:00 PM'  },
+  { key: 'colado_nocturno' as const, label: 'Colado Nocturno', icon: '🌛', defaultHorario: '8:00 PM'  },
+];
+
+type TiempoKey = (typeof TIEMPOS_COMIDA_CONFIG)[number]['key'];
+
+interface TiempoComida {
+  horario:      string;
+  porciones:    string;
+  ejemplo_menu: string;
+}
+
+interface PlanClinico {
+  tiempos:                  Record<TiempoKey, TiempoComida>;
+  observaciones:            string;
+  restricciones_especiales: string;
+  mensaje_motivacional:     string;
+}
+
+function planClinicoInicial(): PlanClinico {
+  const tiempos = {} as Record<TiempoKey, TiempoComida>;
+  for (const t of TIEMPOS_COMIDA_CONFIG) {
+    tiempos[t.key] = { horario: t.defaultHorario, porciones: '', ejemplo_menu: '' };
+  }
+  return { tiempos, observaciones: '', restricciones_especiales: '', mensaje_motivacional: '' };
+}
+
 // Todos los campos InBody — usados en el tooltip para mostrar TODOS los valores del punto
 const INBODY_FIELDS: { key: keyof MedicionInbody; label: string; unit: string; color: string }[] = [
   { key: 'peso',             label: 'Peso total',     unit: ' kg', color: '#8b5cf6' },
@@ -77,12 +111,13 @@ interface PacienteDetalle {
 }
 
 interface PlanNutricional {
-  id: string;
-  calorias_diarias: number | null;
-  proteinas_g: number | null;
-  carbohidratos_g: number | null;
-  grasas_g: number | null;
+  id:                       string;
+  calorias_diarias:         number | null;
+  proteinas_g:              number | null;
+  carbohidratos_g:          number | null;
+  grasas_g:                 number | null;
   restricciones_dieteticas: string[] | null;
+  contenido_json:           PlanClinico | null;
 }
 
 interface MedicionInbody {
@@ -144,12 +179,13 @@ const MOCK_MEDICIONES: MedicionInbody[] = [
 ];
 
 const MOCK_PLAN: PlanNutricional = {
-  id:                      'plan-mock',
-  calorias_diarias:        1800,
-  proteinas_g:             140,
-  carbohidratos_g:         180,
-  grasas_g:                60,
+  id:                       'plan-mock',
+  calorias_diarias:         1800,
+  proteinas_g:              140,
+  carbohidratos_g:          180,
+  grasas_g:                 60,
   restricciones_dieteticas: ['Sin azúcar', 'Alto en fibra'],
+  contenido_json:           null,
 };
 
 const MOCK_NOTAS: Nota[] = [
@@ -571,7 +607,7 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
   const [nuevaAlergia,     setNuevaAlergia]     = useState('');
   const [savingAlergias,   setSavingAlergias]   = useState(false);
 
-  // Plan nutricional
+  // Plan nutricional (macros legacy — se conservan en DB)
   const [planEdit, setPlanEdit] = useState({
     calorias:  0,
     proteinas: 0,
@@ -579,10 +615,15 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
     grasas:    0,
     restricciones: [] as string[],
   });
-  const [savingPlan,        setSavingPlan]        = useState(false);
-  const [planDirty,         setPlanDirty]         = useState(false);
-  const [savingRestr,       setSavingRestr]       = useState(false);
+  const [savingPlan,         setSavingPlan]         = useState(false);
+  const [planDirty,          setPlanDirty]          = useState(false);
+  const [savingRestr,        setSavingRestr]        = useState(false);
   const [restriccionesDirty, setRestriccionesDirty] = useState(false);
+
+  // Plan clínico estructurado (formulario de tiempos de comida)
+  const [planClinico,        setPlanClinico]        = useState<PlanClinico>(() => planClinicoInicial());
+  const [savingPlanClinico,  setSavingPlanClinico]  = useState(false);
+  const [planClinicoDirty,   setPlanClinicoDirty]   = useState(false);
 
   // Diario de comidas
   const [fotoDiario,       setFotoDiario]      = useState<FotoDiario[]>([]);
@@ -662,6 +703,10 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
           grasas:        pl.grasas_g                  ?? 0,
           restricciones: pl.restricciones_dieteticas  ?? [],
         });
+        // Cargar plan clínico si existe
+        if (pl.contenido_json) {
+          setPlanClinico(pl.contenido_json);
+        }
       }
 
       if (resM.ok) {
@@ -846,6 +891,43 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
     setPlanDirty(true);
   }
 
+  // ── Plan clínico ─────────────────────────────────────────────────────────────
+
+  function updateTiempo(key: TiempoKey, field: keyof TiempoComida, value: string) {
+    setPlanClinico((prev) => ({
+      ...prev,
+      tiempos: { ...prev.tiempos, [key]: { ...prev.tiempos[key], [field]: value } },
+    }));
+    setPlanClinicoDirty(true);
+  }
+
+  function updatePlanClinicoField(
+    field: keyof Omit<PlanClinico, 'tiempos'>,
+    value: string,
+  ) {
+    setPlanClinico((prev) => ({ ...prev, [field]: value }));
+    setPlanClinicoDirty(true);
+  }
+
+  async function handleGuardarPlanClinico() {
+    if (isMock) { showToast('Modo demo — cambios no persisten', 'err'); return; }
+    setSavingPlanClinico(true);
+    try {
+      const res = await fetch(`/api/pacientes/${pacienteId}/plan`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ contenido_json: planClinico }),
+      });
+      if (!res.ok) throw new Error();
+      setPlanClinicoDirty(false);
+      showToast('✓ Plan guardado — ya visible para el paciente');
+    } catch {
+      showToast('Error al guardar el plan', 'err');
+    } finally {
+      setSavingPlanClinico(false);
+    }
+  }
+
   function toggleRestriccion(r: string) {
     setPlanEdit((prev) => {
       const next = prev.restricciones.includes(r)
@@ -988,7 +1070,6 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
   const nombreCompleto = paciente ? `${paciente.nombre}${paciente.apellido ? ' ' + paciente.apellido : ''}` : '';
   const hasLeftAxis   = METRICAS.some((m) => m.axis === 'left'  && visibleMetrics.has(m.key));
   const hasRightAxis  = METRICAS.some((m) => m.axis === 'right' && visibleMetrics.has(m.key));
-  const { pPct, cPct, gPct } = macroCalc(planEdit.proteinas, planEdit.carbos, planEdit.grasas);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
@@ -1415,80 +1496,164 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
       </SectionCard>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          5. PLAN NUTRICIONAL
+          5. PLAN ALIMENTARIO CLÍNICO
       ══════════════════════════════════════════════════════════════════════ */}
       <SectionCard
-        title="Plan nutricional"
+        title="Plan alimentario clínico"
         icon="📋"
         action={
-          planDirty ? (
+          planClinicoDirty ? (
             <button
-              onClick={handleGuardarPlan}
-              disabled={savingPlan}
+              onClick={handleGuardarPlanClinico}
+              disabled={savingPlanClinico}
               className="text-xs font-semibold bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
             >
-              {savingPlan ? 'Guardando…' : 'Guardar cambios'}
+              {savingPlanClinico ? 'Guardando…' : '💾 Guardar plan'}
             </button>
           ) : (
             <span className="text-xs text-slate-400">Sin cambios pendientes</span>
           )
         }
       >
-        {/* Calorías */}
-        <div className="mb-5">
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
-            Calorías diarias
-          </label>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              value={planEdit.calorias || ''}
-              onChange={(e) => updatePlanField('calorias', parseInt(e.target.value) || 0)}
-              placeholder="2000"
-              className="w-36 border border-slate-200 rounded-lg px-3 py-2 text-2xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
+        {/* ── Tabla de tiempos de comida ── */}
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-sm border-collapse min-w-[600px]">
+            <thead>
+              <tr className="bg-brand-50">
+                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide rounded-tl-lg w-36">
+                  Tiempo
+                </th>
+                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-28">
+                  Horario
+                </th>
+                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-48">
+                  Porciones
+                </th>
+                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide rounded-tr-lg">
+                  Ejemplo de menú
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {TIEMPOS_COMIDA_CONFIG.map(({ key, label, icon }) => (
+                <tr key={key} className="align-top hover:bg-slate-50 transition-colors">
+                  {/* Tiempo de comida */}
+                  <td className="px-3 py-3 font-medium text-slate-700 whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base leading-none">{icon}</span>
+                      <span className="text-sm">{label}</span>
+                    </div>
+                  </td>
+
+                  {/* Horario */}
+                  <td className="px-3 py-3">
+                    <input
+                      type="text"
+                      value={planClinico.tiempos[key].horario}
+                      onChange={(e) => updateTiempo(key, 'horario', e.target.value)}
+                      placeholder="7:30 AM"
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
+                    />
+                  </td>
+
+                  {/* Porciones */}
+                  <td className="px-3 py-3">
+                    <input
+                      type="text"
+                      value={planClinico.tiempos[key].porciones}
+                      onChange={(e) => updateTiempo(key, 'porciones', e.target.value)}
+                      placeholder="1 Harina, 3 Carnes…"
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
+                    />
+                  </td>
+
+                  {/* Ejemplo de menú */}
+                  <td className="px-3 py-3">
+                    <textarea
+                      value={planClinico.tiempos[key].ejemplo_menu}
+                      onChange={(e) => updateTiempo(key, 'ejemplo_menu', e.target.value)}
+                      placeholder={`Opciones para ${label.toLowerCase()}…`}
+                      rows={3}
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none bg-white placeholder:text-slate-300"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Secciones de texto ── */}
+        <div className="space-y-4 mt-5 border-t border-slate-100 pt-5">
+
+          {/* Observaciones / Alimentos libres */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+              📝 Observaciones / Alimentos libres
+            </label>
+            <textarea
+              value={planClinico.observaciones}
+              onChange={(e) => updatePlanClinicoField('observaciones', e.target.value)}
+              placeholder="Ej: Puede consumir frutas libremente entre comidas. El agua es libre…"
+              rows={3}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none placeholder:text-slate-300"
             />
-            <span className="text-slate-400 font-medium">kcal / día</span>
+          </div>
+
+          {/* Restricciones especiales */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+              🚫 Restricciones especiales
+            </label>
+            <textarea
+              value={planClinico.restricciones_especiales}
+              onChange={(e) => updatePlanClinicoField('restricciones_especiales', e.target.value)}
+              placeholder="Ej: Los picadillos no deben llevar maíz dulce ni papa. Evitar embutidos…"
+              rows={2}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none placeholder:text-slate-300"
+            />
+          </div>
+
+          {/* Mensaje motivacional */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+              🎉 Mensaje motivacional
+            </label>
+            <input
+              type="text"
+              value={planClinico.mensaje_motivacional}
+              onChange={(e) => updatePlanClinicoField('mensaje_motivacional', e.target.value)}
+              placeholder="Ej: ¡Felicidades! Bajaste 4.4 kg de grasa. Vas muy bien…"
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300 placeholder:text-slate-300"
+            />
+            <p className="text-xs text-slate-400 mt-1.5">
+              Este mensaje aparecerá destacado en la pantalla de plan del paciente.
+            </p>
           </div>
         </div>
 
-        {/* Macros */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">
-            Distribución de macros
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              { label: 'Proteínas',     key: 'proteinas' as const, color: 'bg-blue-500',   pct: pPct, cal: planEdit.proteinas * 4 },
-              { label: 'Carbohidratos', key: 'carbos'    as const, color: 'bg-amber-400',  pct: cPct, cal: planEdit.carbos * 4    },
-              { label: 'Grasas',        key: 'grasas'    as const, color: 'bg-rose-400',   pct: gPct, cal: planEdit.grasas * 9    },
-            ].map(({ label, key, color, pct, cal }) => (
-              <div key={key} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className={cn('w-2.5 h-2.5 rounded-full', color)} />
-                    <span className="text-xs font-semibold text-slate-600">{label}</span>
-                  </div>
-                  <span className="text-xs text-slate-400 font-medium">{pct}%</span>
-                </div>
-                <div className="flex items-baseline gap-1.5">
-                  <input
-                    type="number"
-                    value={planEdit[key] || ''}
-                    onChange={(e) => updatePlanField(key, parseInt(e.target.value) || 0)}
-                    placeholder="0"
-                    className="w-20 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-lg font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
-                  />
-                  <span className="text-slate-400 text-sm">g</span>
-                  <span className="text-slate-400 text-xs ml-auto">{cal} kcal</span>
-                </div>
-                {/* Mini barra */}
-                <div className="mt-2 bg-slate-200 rounded-full h-1 overflow-hidden">
-                  <div className={cn('h-1 rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-            ))}
+        {/* ── Botón guardar al final (acceso rápido) ── */}
+        {planClinicoDirty && (
+          <div className="mt-5 flex justify-end">
+            <button
+              onClick={handleGuardarPlanClinico}
+              disabled={savingPlanClinico}
+              className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl disabled:opacity-50 transition-colors"
+            >
+              {savingPlanClinico ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                  </svg>
+                  Guardando…
+                </>
+              ) : (
+                <>💾 Guardar plan</>
+              )}
+            </button>
           </div>
-        </div>
+        )}
       </SectionCard>
 
       {/* ══════════════════════════════════════════════════════════════════════

@@ -3,6 +3,23 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { requirePaciente } from '@/lib/supabase/auth-helpers';
 import { anthropic } from '@/lib/anthropic/client';
 
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+interface TiempoComida {
+  horario:      string;
+  porciones:    string;
+  ejemplo_menu: string;
+}
+
+type TiempoKey = 'desayuno' | 'merienda_am' | 'almuerzo' | 'merienda_pm' | 'cena' | 'colado_nocturno';
+
+interface PlanClinico {
+  tiempos:                  Partial<Record<TiempoKey, TiempoComida>>;
+  observaciones:            string;
+  restricciones_especiales: string;
+  mensaje_motivacional:     string;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const INGREDIENTES_CR_FALLBACK = [
@@ -11,20 +28,65 @@ const INGREDIENTES_CR_FALLBACK = [
   'papa', 'zanahoria', 'repollo', 'aguacate', 'chayote', 'yuca',
 ];
 
-function buildPrompt(listaProductos: string): string {
+const TIEMPO_LABELS: Record<TiempoKey, string> = {
+  desayuno:        'Desayuno',
+  merienda_am:     'Merienda AM',
+  almuerzo:        'Almuerzo',
+  merienda_pm:     'Merienda PM',
+  cena:            'Cena',
+  colado_nocturno: 'Colado Nocturno',
+};
+
+const JSON_SCHEMA_COMIDA =
+  '{"nombre": string, "ingredientes": string[], "instrucciones": string[], ' +
+  '"macros": {"calorias": number, "proteina": number, "carbos": number, "grasas": number}}';
+
+/** Prompt sin plan clínico — usa ingredientes de la despensa */
+function buildPromptSinPlan(listaProductos: string): string {
   return (
-    `Eres un nutricionista costarricense. Con estos ingredientes disponibles: ${listaProductos}, ` +
+    `Eres un nutricionista costarricense. ` +
+    `Con estos ingredientes disponibles: ${listaProductos}, ` +
     `genera un menú para el día con desayuno, almuerzo, cena y una merienda. ` +
     `Usa ingredientes típicos costarricenses cuando sea posible. ` +
     `Para cada comida incluye: nombre del plato, ingredientes con cantidades, ` +
     `instrucciones simples y macros aproximados (calorías, proteína, carbohidratos, grasas). ` +
     `Responde ÚNICAMENTE en JSON con esta estructura: ` +
-    `{ "menu": { ` +
-    `"desayuno": {"nombre": string, "ingredientes": string[], "instrucciones": string[], "macros": {"calorias": number, "proteina": number, "carbos": number, "grasas": number}}, ` +
-    `"almuerzo": {"nombre": string, "ingredientes": string[], "instrucciones": string[], "macros": {"calorias": number, "proteina": number, "carbos": number, "grasas": number}}, ` +
-    `"cena": {"nombre": string, "ingredientes": string[], "instrucciones": string[], "macros": {"calorias": number, "proteina": number, "carbos": number, "grasas": number}}, ` +
-    `"merienda": {"nombre": string, "ingredientes": string[], "instrucciones": string[], "macros": {"calorias": number, "proteina": number, "carbos": number, "grasas": number}} ` +
-    `} }`
+    `{ "menu": { "desayuno": ${JSON_SCHEMA_COMIDA}, "almuerzo": ${JSON_SCHEMA_COMIDA}, ` +
+    `"cena": ${JSON_SCHEMA_COMIDA}, "merienda": ${JSON_SCHEMA_COMIDA} } }`
+  );
+}
+
+/** Prompt con plan clínico — respeta horarios, porciones y restricciones */
+function buildPromptConPlan(listaProductos: string, plan: PlanClinico): string {
+  const tiemposStr = (Object.entries(plan.tiempos) as [TiempoKey, TiempoComida][])
+    .filter(([, t]) => t.horario || t.porciones)
+    .map(([k, t]) => {
+      const partes: string[] = [`${TIEMPO_LABELS[k]} a las ${t.horario || '—'}`];
+      if (t.porciones)    partes.push(`Porciones: ${t.porciones}`);
+      if (t.ejemplo_menu) partes.push(`Ejemplo indicado: ${t.ejemplo_menu}`);
+      return partes.join(' | ');
+    })
+    .join('\n');
+
+  return (
+    `Eres un nutricionista costarricense. ` +
+    `El paciente tiene el siguiente plan alimentario clínico asignado:\n\n` +
+    `TIEMPOS DE COMIDA:\n${tiemposStr}\n` +
+    (plan.restricciones_especiales
+      ? `\nRESTRICCIONES ESPECIALES: ${plan.restricciones_especiales}\n`
+      : '') +
+    (plan.observaciones
+      ? `\nOBSERVACIONES DEL NUTRICIONISTA: ${plan.observaciones}\n`
+      : '') +
+    `\nCon los ingredientes disponibles: ${listaProductos}, ` +
+    `genera recetas concretas para hoy respetando el plan del nutricionista. ` +
+    `Respeta los horarios, las porciones y las restricciones indicadas. ` +
+    `Usa ingredientes típicos costarricenses cuando sea posible. ` +
+    `Para cada comida incluye: nombre del plato, ingredientes con cantidades, ` +
+    `instrucciones simples y macros aproximados (calorías, proteína, carbohidratos, grasas). ` +
+    `Responde ÚNICAMENTE en JSON con esta estructura: ` +
+    `{ "menu": { "desayuno": ${JSON_SCHEMA_COMIDA}, "almuerzo": ${JSON_SCHEMA_COMIDA}, ` +
+    `"cena": ${JSON_SCHEMA_COMIDA}, "merienda": ${JSON_SCHEMA_COMIDA} } }`
   );
 }
 
@@ -56,9 +118,7 @@ export async function GET() {
       .maybeSingle();
 
     if (error) {
-      console.error('[generar-recetas] GET Supabase error — code:', error.code);
-      console.error('[generar-recetas] GET Supabase error — message:', error.message);
-      console.error('[generar-recetas] GET Supabase error — hint:', error.hint);
+      console.error('[generar-recetas] GET Supabase error:', error.message);
       return NextResponse.json({ menu: null, debugError: error.message });
     }
 
@@ -68,10 +128,7 @@ export async function GET() {
       console.log('[generar-recetas] GET — no hay menú guardado para hoy');
     }
 
-    return NextResponse.json({
-      menu:  data?.menu ?? null,
-      fecha: hoy,
-    });
+    return NextResponse.json({ menu: data?.menu ?? null, fecha: hoy });
 
   } catch (err) {
     console.error('[generar-recetas] GET catch:', err);
@@ -80,8 +137,10 @@ export async function GET() {
 }
 
 // ─── POST /api/generar-recetas ────────────────────────────────────────────────
-// Genera un nuevo menú con Claude, lo persiste y lo devuelve.
-// Si ya existe un menú para hoy, lo sobreescribe (flujo de "Regenerar").
+// Genera un nuevo menú con Claude usando:
+//   1. El plan clínico del paciente (si existe) → prompt contextualizado
+//   2. Ingredientes de la despensa (si hay) o ingredientes típicos CR como fallback
+// Persiste el menú generado y lo devuelve.
 
 export async function POST() {
   try {
@@ -92,7 +151,17 @@ export async function POST() {
     const admin = createAdminClient();
     const hoy   = hoyEnCR();
 
-    // 1. Despensa del paciente (si tiene nutricionista asignado)
+    // ── 1. Plan clínico del paciente ────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: planData } = await (admin.from('planes_nutricionales') as any)
+      .select('contenido_json')
+      .eq('paciente_id', pacienteId)
+      .eq('activo', true)
+      .maybeSingle() as { data: { contenido_json: PlanClinico | null } | null };
+
+    const planClinico: PlanClinico | null = planData?.contenido_json ?? null;
+
+    // ── 2. Despensa del nutricionista (si tiene uno asignado) ────────────────
     let inventario: { nombre: string; stock: number; unidad_medida: string | null }[] = [];
 
     if (nutriologoId) {
@@ -110,17 +179,26 @@ export async function POST() {
       }
     }
 
-    // 2. Lista de ingredientes
-    const usandoDespensa  = inventario.length > 0;
-    const listaProductos  = usandoDespensa
-      ? inventario.map((item) => `${item.nombre} (${item.stock} ${item.unidad_medida ?? 'und'})`).join(', ')
+    // ── 3. Lista de ingredientes ─────────────────────────────────────────────
+    const usandoDespensa = inventario.length > 0;
+    const listaProductos = usandoDespensa
+      ? inventario
+          .map((item) => `${item.nombre} (${item.stock} ${item.unidad_medida ?? 'und'})`)
+          .join(', ')
       : INGREDIENTES_CR_FALLBACK.join(', ');
 
-    // 3. Llamar a Claude
+    // ── 4. Construir prompt ──────────────────────────────────────────────────
+    const prompt = planClinico
+      ? buildPromptConPlan(listaProductos, planClinico)
+      : buildPromptSinPlan(listaProductos);
+
+    console.log(`[generar-recetas] usandoPlan: ${!!planClinico} | usandoDespensa: ${usandoDespensa}`);
+
+    // ── 5. Llamar a Claude ───────────────────────────────────────────────────
     const message = await anthropic.messages.create({
       model:      'claude-sonnet-4-5',
       max_tokens: 2048,
-      messages:   [{ role: 'user', content: buildPrompt(listaProductos) }],
+      messages:   [{ role: 'user', content: prompt }],
     });
 
     const block = message.content[0];
@@ -128,7 +206,7 @@ export async function POST() {
       return NextResponse.json({ error: 'El modelo no devolvió texto' }, { status: 500 });
     }
 
-    // 4. Parsear respuesta
+    // ── 6. Parsear respuesta ─────────────────────────────────────────────────
     const raw = block.text.trim()
       .replace(/^```(?:json)?\s*/i, '')
       .replace(/\s*```$/i, '');
@@ -152,8 +230,7 @@ export async function POST() {
       );
     }
 
-    // 5. Persistir en recetas_generadas
-    //    Primero borrar el menú existente de hoy (si el paciente está regenerando)
+    // ── 7. Persistir (sobreescribir si ya hay menú de hoy) ──────────────────
     const { error: deleteErr, count: deleteCount } = await admin
       .from('recetas_generadas')
       .delete({ count: 'exact' })
@@ -171,11 +248,10 @@ export async function POST() {
       paciente_id:     pacienteId,
       nombre:          `menu_diario_${hoy}`,
       generada_por_ia: true,
-      tipo_comida:     null,          // null = menú completo del día
+      tipo_comida:     null,
       fecha:           hoy,
       menu:            JSON.parse(JSON.stringify(parsed.menu)),
     };
-    console.log('[generar-recetas] insert payload keys:', Object.keys(insertPayload));
 
     const { error: insertErr, data: insertData } = await admin
       .from('recetas_generadas')
@@ -184,11 +260,7 @@ export async function POST() {
       .single();
 
     if (insertErr) {
-      // No bloqueamos la respuesta — el menú igual se devuelve al cliente
-      console.error('[generar-recetas] insert ERROR — code:', insertErr.code);
-      console.error('[generar-recetas] insert ERROR — message:', insertErr.message);
-      console.error('[generar-recetas] insert ERROR — details:', insertErr.details);
-      console.error('[generar-recetas] insert ERROR — hint:', insertErr.hint);
+      console.error('[generar-recetas] insert ERROR:', insertErr.message);
     } else {
       console.log('[generar-recetas] insert OK — id:', insertData?.id, '— fecha:', insertData?.fecha);
     }
@@ -196,6 +268,7 @@ export async function POST() {
     return NextResponse.json({
       menu:               parsed.menu,
       usandoIngredientes: usandoDespensa ? 'despensa' : 'tipicos_cr',
+      usandoPlan:         !!planClinico,
       fecha:              hoy,
     });
 
