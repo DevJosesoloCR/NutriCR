@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import PorcionesSelector from '@/components/nutriologo/PorcionesSelector';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -238,31 +239,30 @@ function ModalPlan({
               Tiempos de comida
             </p>
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full text-sm border-collapse min-w-[560px]">
+              <table className="w-full text-sm border-collapse min-w-[700px]">
                 <thead>
                   <tr className="bg-brand-50">
-                    {['Tiempo', 'Horario', 'Porciones', 'Ejemplo de menú'].map((h, i) => (
-                      <th
-                        key={h}
-                        className={cn(
-                          'text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide',
-                          i === 0 && 'w-36',
-                          i === 1 && 'w-28',
-                          i === 2 && 'w-44',
-                        )}
-                      >
-                        {h}
-                      </th>
-                    ))}
+                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-36">
+                      Tiempo
+                    </th>
+                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-24">
+                      Horario
+                    </th>
+                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-64">
+                      Porciones por grupo
+                    </th>
+                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide">
+                      Ejemplo de menú
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {TIEMPOS_CONFIG.map(({ key, label, icon }) => (
                     <tr key={key} className="align-top hover:bg-slate-50/60">
-                      <td className="px-3 py-2.5 font-medium text-slate-700 whitespace-nowrap">
+                      <td className="px-3 py-3 font-medium text-slate-700 whitespace-nowrap">
                         <span className="mr-1">{icon}</span>{label}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-3">
                         <input
                           type="text"
                           value={form.tiempos[key].horario}
@@ -272,22 +272,19 @@ function ModalPlan({
                                      focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
                         />
                       </td>
-                      <td className="px-3 py-2.5">
-                        <input
-                          type="text"
+                      <td className="px-3 py-3">
+                        <PorcionesSelector
                           value={form.tiempos[key].porciones}
-                          onChange={(e) => updateTiempo(key, 'porciones', e.target.value)}
-                          placeholder="1 Harina, 3 Carnes…"
-                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs
-                                     focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
+                          onChange={(txt) => updateTiempo(key, 'porciones', txt)}
+                          compact
                         />
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-3">
                         <textarea
                           value={form.tiempos[key].ejemplo_menu}
                           onChange={(e) => updateTiempo(key, 'ejemplo_menu', e.target.value)}
                           placeholder={`Opciones para ${label.toLowerCase()}…`}
-                          rows={2}
+                          rows={3}
                           className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs
                                      focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none
                                      bg-white placeholder:text-slate-300"

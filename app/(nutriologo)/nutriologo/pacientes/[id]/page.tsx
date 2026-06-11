@@ -13,6 +13,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { cn } from '@/lib/utils';
+import PorcionesSelector from '@/components/nutriologo/PorcionesSelector';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1517,17 +1518,17 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
       >
         {/* ── Tabla de tiempos de comida ── */}
         <div className="overflow-x-auto -mx-1">
-          <table className="w-full text-sm border-collapse min-w-[600px]">
+          <table className="w-full text-sm border-collapse min-w-[720px]">
             <thead>
               <tr className="bg-brand-50">
                 <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide rounded-tl-lg w-36">
                   Tiempo
                 </th>
-                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-28">
+                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-24">
                   Horario
                 </th>
-                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-48">
-                  Porciones
+                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-64">
+                  Porciones por grupo
                 </th>
                 <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide rounded-tr-lg">
                   Ejemplo de menú
@@ -1556,14 +1557,12 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
                     />
                   </td>
 
-                  {/* Porciones */}
+                  {/* Porciones — selector interactivo por grupo de intercambio */}
                   <td className="px-3 py-3">
-                    <input
-                      type="text"
+                    <PorcionesSelector
                       value={planClinico.tiempos[key].porciones}
-                      onChange={(e) => updateTiempo(key, 'porciones', e.target.value)}
-                      placeholder="1 Harina, 3 Carnes…"
-                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
+                      onChange={(txt) => updateTiempo(key, 'porciones', txt)}
+                      compact
                     />
                   </td>
 

@@ -3,6 +3,69 @@
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
+// ─── Chips de porciones (display-only) ───────────────────────────────────────
+
+const GRUPO_ESTILOS: Record<string, { icon: string; bg: string; text: string }> = {
+  harina:   { icon: '🌾', bg: 'bg-amber-100',  text: 'text-amber-800'  },
+  carne:    { icon: '🥩', bg: 'bg-red-100',    text: 'text-red-800'    },
+  vegetal:  { icon: '🥦', bg: 'bg-green-100',  text: 'text-green-800'  },
+  fruta:    { icon: '🍎', bg: 'bg-pink-100',   text: 'text-pink-800'   },
+  grasa:    { icon: '🫒', bg: 'bg-yellow-100', text: 'text-yellow-800' },
+  lácteo:   { icon: '🥛', bg: 'bg-sky-100',    text: 'text-sky-800'    },
+  lacteo:   { icon: '🥛', bg: 'bg-sky-100',    text: 'text-sky-800'    },
+  azúcar:   { icon: '🍬', bg: 'bg-purple-100', text: 'text-purple-800' },
+  azucar:   { icon: '🍬', bg: 'bg-purple-100', text: 'text-purple-800' },
+  libre:    { icon: '✅', bg: 'bg-teal-100',   text: 'text-teal-800'   },
+};
+
+// Normaliza sin acento y en minúsculas para buscar estilo
+function norm(s: string) {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+interface PorcionChip { cantidad: number; label: string; estilo: { icon: string; bg: string; text: string } | null }
+
+function parsearPorciones(texto: string): PorcionChip[] | null {
+  if (!texto.trim()) return null;
+  const partes = texto.split(/\s*·\s*/);
+  const chips: PorcionChip[] = [];
+  for (const parte of partes) {
+    const m = parte.trim().match(/^(\d+)\s+(.+)$/);
+    if (!m) return null; // texto libre antiguo → fallback
+    const cantidad = parseInt(m[1], 10);
+    const label    = m[2].trim();
+    const key      = norm(label).replace(/s$/, ''); // singular aproximado
+    const estilo   = GRUPO_ESTILOS[norm(label)] ?? GRUPO_ESTILOS[key] ?? null;
+    chips.push({ cantidad, label, estilo });
+  }
+  return chips.length ? chips : null;
+}
+
+function PorcionesDisplay({ texto }: { texto: string }) {
+  const chips = parsearPorciones(texto);
+  if (!chips) {
+    // Texto libre o formato antiguo — mostrar tal cual
+    return <p className="text-sm text-slate-700 font-medium">{texto}</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {chips.map(({ cantidad, label, estilo }) => (
+        <span
+          key={label}
+          className={cn(
+            'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold',
+            estilo ? cn(estilo.bg, estilo.text) : 'bg-slate-100 text-slate-700',
+          )}
+        >
+          {estilo?.icon && <span>{estilo.icon}</span>}
+          <span className="font-bold">{cantidad}</span>
+          <span>{label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface TiempoComida {
@@ -125,10 +188,10 @@ function TiempoCard({
       {/* Porciones */}
       {tiempo.porciones && (
         <div>
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
             Porciones
           </p>
-          <p className="text-sm text-slate-700 font-medium">{tiempo.porciones}</p>
+          <PorcionesDisplay texto={tiempo.porciones} />
         </div>
       )}
 
