@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAvatar } from '@/context/AvatarContext';
@@ -44,6 +44,7 @@ export default function PacienteHeader() {
   const [noLeidas,    setNoLeidas]    = useState(0);
   const [showModal,   setShowModal]   = useState(false);
   const [marcando,    setMarcando]    = useState(false);
+  const pacienteIdRef                 = useRef<string | null>(null);
 
   // Avatar del paciente — desde AvatarContext (se mantiene entre navegaciones)
   const { avatarUrl, iniciales, setAvatarUrl } = useAvatar();
@@ -80,6 +81,54 @@ export default function PacienteHeader() {
   }, []);
 
   useEffect(() => { cargarNotifs(); }, [cargarNotifs]);
+
+  // Realtime: escuchar INSERT en notificaciones de este paciente para
+  // actualizar el badge al instante (sin polling), incluyendo plan_actualizado.
+  useEffect(() => {
+    const supabase = createClient();
+    let channelActive = true;
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !channelActive) return;
+
+      // Resolver paciente_id del usuario autenticado
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: pacRow } = await (supabase as any)
+        .from('pacientes')
+        .select('id')
+        .eq('usuario_id', user.id)
+        .maybeSingle() as { data: { id: string } | null };
+
+      if (!pacRow?.id || !channelActive) return;
+      pacienteIdRef.current = pacRow.id;
+
+      const channel = supabase
+        .channel(`notifs-paciente-${pacRow.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event:  'INSERT',
+            schema: 'public',
+            table:  'notificaciones',
+            filter: `paciente_id=eq.${pacRow.id}`,
+          },
+          (payload) => {
+            const nueva = payload.new as Notificacion;
+            // Agregar al inicio de la lista y subir el badge
+            setNotifs((prev) => [nueva, ...prev]);
+            setNoLeidas((prev) => prev + 1);
+          },
+        )
+        .subscribe();
+
+      return () => { supabase.removeChannel(channel); };
+    })();
+
+    return () => { channelActive = false; };
+  // Solo al montar — cargarNotifs se llamó aparte
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function abrirModal() {
     setShowModal(true);
@@ -183,7 +232,9 @@ export default function PacienteHeader() {
                     >
                       <div className="flex items-start gap-3">
                         <span className="text-xl mt-0.5 flex-shrink-0">
-                          {n.tipo === 'nota' ? '📝' : '🔔'}
+                          {n.tipo === 'nota'             ? '📝'
+                           : n.tipo === 'plan_actualizado' ? '📋'
+                           : '🔔'}
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-slate-700 leading-relaxed">{n.mensaje}</p>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { requireNutriologo } from '@/lib/supabase/auth-helpers';
+import { sendPush } from '@/lib/web-push';
 
 // ── POST /api/planes/[id]/asignar ─────────────────────────────────────────────
 // Asigna la plantilla de plan a uno o más pacientes.
@@ -10,7 +11,10 @@ import { requireNutriologo } from '@/lib/supabase/auth-helpers';
 //   - Verifica que el plan y el paciente pertenecen al nutricionista autenticado.
 //   - Si el paciente ya tiene un plan activo → actualiza contenido_json.
 //   - Si no tiene plan activo → crea uno nuevo con activo = true.
+//   - Después del upsert: crea registro en `notificaciones` + envía Web Push.
 // Un plan puede asignarse a múltiples pacientes (es una copia del contenido_json).
+
+const MENSAJE_PLAN = 'Tu nutricionista actualizó tu plan alimentario. ¡Revisalo en la sección Plan!';
 
 export async function POST(
   request: Request,
@@ -95,7 +99,49 @@ export async function POST(
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // ── 5. Devolver nombre del paciente para el mensaje de confirmación ─────────
+  // ── 5. Notificación en BD + Web Push (fire-and-forget, no bloquea respuesta) ─
+  (async () => {
+    try {
+      // 5a. Insertar en tabla notificaciones (alimenta el badge de campana)
+      const { error: notifErr } = await admin
+        .from('notificaciones')
+        .insert({
+          paciente_id,
+          tipo:    'plan_actualizado',
+          mensaje: MENSAJE_PLAN,
+          leida:   false,
+        });
+
+      if (notifErr) {
+        console.error('[asignar-plan] Error al crear notificación:', notifErr.message);
+      }
+
+      // 5b. Buscar suscripciones push activas del paciente
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: subs } = await (admin as any)
+        .from('push_subscriptions')
+        .select('subscription')
+        .eq('paciente_id', paciente_id);
+
+      if (!subs?.length) return;
+
+      // 5c. Enviar a todos los dispositivos registrados
+      await Promise.allSettled(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        subs.map((row: any) =>
+          sendPush(row.subscription, {
+            title: 'Plan actualizado 📋',
+            body:  'Tu nutricionista actualizó tu plan alimentario',
+            icon:  '/icons/icon-192x192.png',
+          }),
+        ),
+      );
+    } catch (err) {
+      console.error('[asignar-plan] Error en notificaciones push:', err);
+    }
+  })();
+
+  // ── 6. Devolver nombre del paciente para el mensaje de confirmación ─────────
   const nombrePaciente = [
     (usuData as { nombre?: string })?.nombre,
     (usuData as { apellido?: string })?.apellido,
