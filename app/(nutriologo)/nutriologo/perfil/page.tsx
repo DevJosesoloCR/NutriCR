@@ -222,8 +222,6 @@ export default function PerfilNutriologoPage() {
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
         {/* Avatar centrado */}
         <div className="flex flex-col items-center mb-5">
-          {/* Siempre montado (igual que perfil del paciente) para que el chunk
-              dinámico de ImageCropper empiece a cargarse desde el primer render. */}
           <AvatarUploader
             userId={user?.id ?? null}
             currentAvatarUrl={avatarUrl}
