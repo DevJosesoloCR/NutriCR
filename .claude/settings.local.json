@@ -88,7 +88,8 @@
       "Bash(.venv/bin/python3 -W ignore -c ' *)",
       "Bash(.venv/bin/python3 -W ignore generate_report.py data/R_25_60s.csv --tp 4.0 --sl 0.8 --max-bars 99999 --balance 250 --lote 0.10 --vpunto 1.0 --out reporte_backtest_v25.html)",
       "Bash(.venv/bin/python3 -W ignore generate_report.py data/R_25_60s.csv --tp 4.0 --sl 0.8 --max-bars 99999 --balance 250 --lote 0.10 --vpunto 1.0 --out reporte_backtest_v25_final.html)",
-      "Bash(open reporte_backtest_v25_final.html)"
+      "Bash(open reporte_backtest_v25_final.html)",
+      "Bash(node -e \"const pkg = require\\('/Users/macdejose/NutriCR/node_modules/react-easy-crop/package.json'\\); console.log\\('version:', pkg.version\\); console.log\\('main:', pkg.main\\); console.log\\('exports:', JSON.stringify\\(pkg.exports, null, 2\\)\\)\")"
     ]
   }
 }

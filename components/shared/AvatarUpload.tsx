@@ -9,15 +9,17 @@
  * Flujo:
  *   1. Clic en "Cambiar foto" → file input
  *   2. Seleccionar archivo → FileReader genera data-URL → ImageCropper se abre
- *   3. Usuario ajusta recorte → "Confirmar recorte" → Blob JPEG creado
- *   4. ImageCropper se cierra → preview local muestra el recorte mientras sube
- *   5. Upload a /api/user/avatar → actualiza AvatarContext (persiste en toda la UI)
- *   6. Preview local se descarta; el contexto tiene la URL final
+ *   3. Usuario ajusta recorte → "Confirmar recorte" → Blob JPEG creado con canvas
+ *   4. ImageCropper se cierra → preview local inmediato mientras sube
+ *   5. Upload a Supabase Storage bucket "avatares" con nombre único
+ *   6. UPDATE usuarios SET avatar_url → actualiza AvatarContext (persiste en toda la UI)
  */
 
-import { useState, useRef }     from 'react';
-import dynamic                  from 'next/dynamic';
-import { useAvatar }            from '@/context/AvatarContext';
+import { useState, useRef }        from 'react';
+import dynamic                     from 'next/dynamic';
+import { useAvatar }               from '@/context/AvatarContext';
+import { createClient }            from '@/lib/supabase/client';
+import type { Database }           from '@/lib/supabase/database.types';
 
 // Importación dinámica para evitar SSR (react-easy-crop usa APIs del browser)
 const ImageCropper = dynamic(() => import('./ImageCropper'), { ssr: false });
@@ -68,26 +70,56 @@ export default function AvatarUpload({ iniciales }: Props) {
 
   // ── Al confirmar el recorte ───────────────────────────────────────────────
   async function handleCropConfirm(blob: Blob) {
-    setCropSrc(null); // cierra el cropper
+    setCropSrc(null); // cierra el cropper inmediatamente
 
-    // Preview local inmediato (data-URL del recorte)
-    try {
-      setLocalUrl(await blobToDataUrl(blob));
-    } catch { /* sin preview local, no es crítico */ }
+    // Preview local inmediato (data-URL del recorte) mientras sube
+    blobToDataUrl(blob).then(setLocalUrl).catch(() => {});
 
-    // Upload
     setSubiendo(true);
     try {
-      const fd = new FormData();
-      fd.append('file', blob, 'avatar.jpg');
-      const res  = await fetch('/api/user/avatar', { method: 'POST', body: fd });
-      const json = await res.json() as { url?: string };
-      if (res.ok && json.url) {
-        setAvatarUrl(json.url); // actualiza contexto global → se refleja en Header/Sidebar/BottomNav
-        setImgError(false);
-      }
-    } catch { /* silencioso */ }
-    finally {
+      const supabase = createClient();
+
+      // Obtener usuario autenticado
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('No autenticado');
+
+      // Nombre único: {userId}_{timestamp}.jpg
+      const fileName = `${user.id}_${Date.now()}.jpg`;
+
+      // Subir a Storage bucket "avatares"
+      const { error: uploadErr } = await supabase.storage
+        .from('avatares')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+      if (uploadErr) throw uploadErr;
+
+      // Obtener URL pública (con cache-buster para forzar recarga de imagen)
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatares')
+        .getPublicUrl(fileName);
+      const urlFinal = `${publicUrl}?t=${Date.now()}`;
+
+      // UPDATE tabla usuarios
+      // Nota: @supabase/ssr v0.5.x infiere `never` en el browser client para .update().
+      // Mismo workaround que el resto del proyecto (ej. /api/alimentos/[id]/route.ts).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: dbErr } = await (supabase.from('usuarios') as any)
+        .update({
+          avatar_url: urlFinal,
+          updated_at: new Date().toISOString(),
+        } satisfies Database['public']['Tables']['usuarios']['Update'])
+        .eq('id', user.id);
+      if (dbErr) throw dbErr;
+
+      // Guardar también en user_metadata para acceso rápido sin DB query
+      await supabase.auth.updateUser({ data: { avatar_url: urlFinal } });
+
+      // Actualizar contexto global → se refleja en Header, Sidebar, BottomNav
+      setAvatarUrl(urlFinal);
+      setImgError(false);
+
+    } catch (err) {
+      console.error('[AvatarUpload] Error al subir avatar:', err);
+    } finally {
       setSubiendo(false);
       setLocalUrl(null); // el contexto ya tiene la URL nueva
     }

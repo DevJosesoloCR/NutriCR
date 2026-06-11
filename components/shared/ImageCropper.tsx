@@ -4,52 +4,78 @@
  * ImageCropper
  * ─────────────
  * Modal full-screen para recortar una imagen en círculo.
- * Recibe la imagen como data-URL (FileReader.readAsDataURL) y devuelve
- * el recorte como Blob JPEG via `onConfirm`.
+ * Recibe imageSrc como data-URL o blob-URL y devuelve el recorte
+ * como Blob JPEG via `onConfirm`.
  *
- * Usa react-easy-crop para la interacción de crop/zoom.
+ * ⚠️  react-easy-crop v6 externaliza su CSS: sin este import las clases
+ *     .reactEasyCrop_* no tienen estilos → pantalla negra y onCropComplete
+ *     nunca dispara → botón Confirmar permanece deshabilitado.
  */
+
+// CRÍTICO: debe importarse antes de usar Cropper
+import 'react-easy-crop/react-easy-crop.css';
 
 import { useState, useCallback } from 'react';
 import Cropper from 'react-easy-crop';
 import type { Area } from 'react-easy-crop';
 
-// ── Canvas helper ─────────────────────────────────────────────────────────────
+// ── getCroppedImg helper ──────────────────────────────────────────────────────
 
-/** Recorta `imageSrc` según `pixelCrop` y devuelve un Blob JPEG ≤512 px. */
-async function createCroppedBlob(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+/** Carga la imagen — sin crossOrigin (data-URLs son same-origin) */
+function createImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const img    = new Image();
-    img.onload  = () => {
-      // Limitar el lado mayor a 512 px
-      const SIZE    = Math.min(pixelCrop.width, pixelCrop.height, 512);
-      const canvas  = document.createElement('canvas');
-      canvas.width  = SIZE;
-      canvas.height = SIZE;
-      canvas
-        .getContext('2d')!
-        .drawImage(img, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, SIZE, SIZE);
-      canvas.toBlob(
-        (b) => b ? resolve(b) : reject(new Error('canvas:toBlob devolvió null')),
-        'image/jpeg',
-        0.9,
-      );
-    };
-    img.onerror = () => reject(new Error('img:load falló'));
-    img.src     = imageSrc;
+    const img   = new Image();
+    img.onload  = () => resolve(img);
+    img.onerror = reject;
+    img.src     = src;
+  });
+}
+
+/**
+ * Recorta `imageSrc` según `pixelCrop` y devuelve un Blob JPEG ≤ 512 px.
+ * Aplica bounds-clamping para que las coordenadas nunca queden fuera de la imagen.
+ */
+async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const image = await createImage(imageSrc);
+
+  // Clamp: evitar valores negativos o fuera del tamaño real de la imagen
+  const sx = Math.max(0, Math.round(pixelCrop.x));
+  const sy = Math.max(0, Math.round(pixelCrop.y));
+  const sw = Math.min(Math.round(pixelCrop.width),  image.naturalWidth  - sx);
+  const sh = Math.min(Math.round(pixelCrop.height), image.naturalHeight - sy);
+
+  if (sw <= 0 || sh <= 0) {
+    throw new Error('getCroppedImg: área de recorte vacía o fuera de imagen');
+  }
+
+  const outputSize = Math.min(sw, sh, 512);
+  const canvas     = document.createElement('canvas');
+  canvas.width     = outputSize;
+  canvas.height    = outputSize;
+  canvas.getContext('2d')!.drawImage(image, sx, sy, sw, sh, 0, 0, outputSize, outputSize);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => b ? resolve(b) : reject(new Error('canvas.toBlob devolvió null')),
+      'image/jpeg',
+      0.9,
+    );
   });
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface Props {
-  /** Data-URL de la imagen seleccionada por el usuario */
+  /** Data-URL o blob-URL de la imagen seleccionada por el usuario */
   imageSrc:  string;
-  /** Llamada con el Blob del recorte al confirmar */
+  /** Recibe el Blob JPEG del recorte confirmado */
   onConfirm: (blob: Blob) => void;
-  /** Llamada al cancelar (sin subir nada) */
+  /** Llamada al cancelar sin subir nada */
   onCancel:  () => void;
 }
+
+/** Altura fija del panel de controles (slider + botones) */
+const CONTROLS_H = 152;
 
 export default function ImageCropper({ imageSrc, onConfirm, onCancel }: Props) {
   const [crop,    setCrop]    = useState({ x: 0, y: 0 });
@@ -57,28 +83,39 @@ export default function ImageCropper({ imageSrc, onConfirm, onCancel }: Props) {
   const [pixels,  setPixels]  = useState<Area | null>(null);
   const [working, setWorking] = useState(false);
 
+  // react-easy-crop dispara esto al cargar la imagen (crop inicial) Y cada vez
+  // que el usuario mueve/zoomea → pixels nunca queda null tras cargar la imagen.
   const onCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     setPixels(croppedAreaPixels);
   }, []);
 
   async function handleConfirm() {
-    if (!pixels) return;
+    if (!pixels || pixels.width === 0 || pixels.height === 0) return;
     setWorking(true);
     try {
-      const blob = await createCroppedBlob(imageSrc, pixels);
+      const blob = await getCroppedImg(imageSrc, pixels);
       onConfirm(blob);
-    } catch {
-      /* silencioso — el usuario puede intentar de nuevo */
+    } catch (err) {
+      console.error('[ImageCropper] getCroppedImg error:', err);
     } finally {
       setWorking(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black flex flex-col select-none touch-none">
+    <div className="fixed inset-0 z-[60] bg-black select-none touch-none">
 
-      {/* ── Área de crop ── */}
-      <div className="relative flex-1">
+      {/*
+        ── Área de crop ──────────────────────────────────────────────────────
+        Posicionamiento absoluto con bottom explícito en lugar de flex-1.
+        react-easy-crop mide el contenedor via getBoundingClientRect /
+        ResizeObserver: con dimensiones absolutas las lee correctamente
+        desde el primer render.
+      */}
+      <div
+        className="absolute inset-x-0 top-0"
+        style={{ bottom: CONTROLS_H }}
+      >
         <Cropper
           image={imageSrc}
           crop={crop}
@@ -86,47 +123,52 @@ export default function ImageCropper({ imageSrc, onConfirm, onCancel }: Props) {
           aspect={1}
           cropShape="round"
           showGrid={false}
+          objectFit="contain"
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onCropComplete={onCropComplete}
         />
       </div>
 
-      {/* ── Controles ── */}
-      <div className="px-6 pt-4 pb-2 bg-black/90 text-center space-y-2">
-        <p className="text-white/50 text-xs tracking-wide">
-          Mové y hacé zoom para centrar tu cara
-        </p>
-        <input
-          type="range"
-          min={1} max={3} step={0.01}
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          className="w-full accent-brand-500"
-          aria-label="Zoom"
-        />
-      </div>
+      {/* ── Controles (altura = CONTROLS_H px) ── */}
+      <div
+        className="absolute inset-x-0 bottom-0 bg-black/90 flex flex-col"
+        style={{ height: CONTROLS_H }}
+      >
+        <div className="px-6 pt-3 pb-1">
+          <p className="text-white/50 text-xs text-center mb-2 tracking-wide">
+            Mové y hacé zoom para encuadrar
+          </p>
+          <input
+            type="range"
+            min={1} max={3} step={0.01}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="w-full accent-brand-500"
+            aria-label="Zoom"
+          />
+        </div>
 
-      {/* ── Botones ── */}
-      <div className="flex gap-3 px-5 py-4 bg-black/90">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={working}
-          className="flex-1 py-3 rounded-xl border border-white/30 text-white text-sm font-semibold
-                     hover:bg-white/10 active:bg-white/20 transition-colors disabled:opacity-40"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={working || !pixels}
-          className="flex-1 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 active:bg-brand-800
-                     text-white text-sm font-semibold transition-colors disabled:opacity-40"
-        >
-          {working ? 'Procesando…' : 'Confirmar recorte'}
-        </button>
+        <div className="flex gap-3 px-5 pb-4 pt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={working}
+            className="flex-1 py-2.5 rounded-xl border border-white/30 text-white text-sm font-semibold
+                       hover:bg-white/10 active:bg-white/20 transition-colors disabled:opacity-40"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={working || !pixels || pixels.width === 0}
+            className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:bg-brand-800
+                       text-white text-sm font-semibold transition-colors disabled:opacity-40"
+          >
+            {working ? 'Procesando…' : 'Confirmar recorte'}
+          </button>
+        </div>
       </div>
 
     </div>
