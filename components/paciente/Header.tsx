@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { useAvatar } from '@/context/AvatarContext';
 
 interface Notificacion {
@@ -45,7 +46,28 @@ export default function PacienteHeader() {
   const [marcando,    setMarcando]    = useState(false);
 
   // Avatar del paciente — desde AvatarContext (se mantiene entre navegaciones)
-  const { avatarUrl, iniciales } = useAvatar();
+  const { avatarUrl, iniciales, setAvatarUrl } = useAvatar();
+
+  // Carga directa desde Supabase browser client al montar.
+  // Backup para PWA reopen: las cookies pueden estar vencidas, pero el cliente
+  // Supabase lee el token desde localStorage y lo refresca solo.
+  useEffect(() => {
+    const loadAvatar = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase.from('usuarios') as any)
+          .select('avatar_url')
+          .eq('id', user.id)
+          .single();
+        if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+      }
+    };
+    loadAvatar();
+  // setAvatarUrl es estable (useCallback sin deps mutables)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cargarNotifs = useCallback(async () => {
     try {

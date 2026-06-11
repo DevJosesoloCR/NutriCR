@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -27,9 +27,27 @@ export default function Sidebar({ expanded, animated, onToggle }: SidebarProps) 
   const router   = useRouter();
 
   // ── Usuario autenticado — desde AvatarContext (persiste entre navegaciones) ──
-  const { avatarUrl, iniciales: inicialesCtx, nombreCompleto } = useAvatar();
+  const { avatarUrl, iniciales: inicialesCtx, nombreCompleto, setAvatarUrl } = useAvatar();
   const iniciales  = inicialesCtx  || 'N';
   const nombreNutr = nombreCompleto || 'Nutricionista';
+
+  // Carga directa desde Supabase browser client al montar (backup para PWA reopen)
+  useEffect(() => {
+    const loadAvatar = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase.from('usuarios') as any)
+          .select('avatar_url')
+          .eq('id', user.id)
+          .single();
+        if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+      }
+    };
+    loadAvatar();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleLogout() {
     const supabase = createClient();

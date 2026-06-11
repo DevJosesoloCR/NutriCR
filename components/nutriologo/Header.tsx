@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { useAvatar } from '@/context/AvatarContext';
 
 interface AlertaNutriologo {
@@ -42,8 +43,26 @@ export default function NutriHeader({ onToggle }: NutriHeaderProps) {
   const title    = pageTitles[pathname] ?? 'Nutri Smart CR';
 
   // ── Usuario / avatar — desde AvatarContext (persiste entre navegaciones) ─────
-  const { avatarUrl, iniciales: inicialesCtx } = useAvatar();
+  const { avatarUrl, iniciales: inicialesCtx, setAvatarUrl } = useAvatar();
   const iniciales = inicialesCtx || 'N';
+
+  // Carga directa desde Supabase browser client al montar (backup para PWA reopen)
+  useEffect(() => {
+    const loadAvatar = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase.from('usuarios') as any)
+          .select('avatar_url')
+          .eq('id', user.id)
+          .single();
+        if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+      }
+    };
+    loadAvatar();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Alertas / notificaciones ────────────────────────────────────────────────
   const [showNotifs, setShowNotifs] = useState(false);

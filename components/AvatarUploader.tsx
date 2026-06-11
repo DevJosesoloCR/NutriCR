@@ -4,51 +4,48 @@
  * AvatarUploader
  * ──────────────
  * Componente unificado para cambiar la foto de perfil.
- * Compartido entre paciente y nutricionista. Sin dependencias externas.
+ * Compartido entre paciente y nutricionista.
+ *
+ * Soporta: JPG, PNG, WEBP, GIF, HEIC, HEIF (y cualquier formato nativo del browser).
  *
  * Flujo:
- *   1. "Subir foto" → file input (acepta image/*, .heic, .heif)
- *   2. Conversión inmediata a JPEG con canvas (máx 400×400, calidad 0.85)
- *      → preview en el círculo desde el primer momento (sin imagen rota)
- *      → funciona con HEIC en Safari/iOS de forma nativa
- *   3. "Guardar foto":
- *      POST /api/user/avatar con el blob ya convertido
- *      → servidor sube a Storage y actualiza usuarios.avatar_url (admin client)
- *   4. onUploadSuccess(url) → padre actualiza el contexto global
+ *   1. "Subir foto" → file input (accept="image/*,.heic,.heif")
+ *   2. Conversión inmediata a JPEG:
+ *      - HEIC/HEIF → heic2any (importación dinámica, solo cuando se necesita)
+ *                    → canvas resize máx 400×400, calidad 0.85
+ *      - Otros      → canvas resize directamente
+ *      Muestra "Procesando imagen…" mientras convierte.
+ *   3. Preview en círculo 120 px con el blob JPEG ya convertido
+ *   4. "Guardar foto" → POST /api/user/avatar → onUploadSuccess(url)
  *   5. "✅ Foto actualizada" durante 3 s
- *
- * Props (sin dependencia interna de AvatarContext):
- *   userId           – ID del usuario (null mientras auth carga → deshabilita botón)
- *   currentAvatarUrl – URL guardada en DB / contexto (fuente de verdad)
- *   iniciales        – Fallback cuando no hay foto
- *   onUploadSuccess  – Callback con la nueva URL pública
  */
 
 import { useState, useRef } from 'react';
 
-// ─── Helper: convertir cualquier formato a JPEG vía canvas ───────────────────
-//
-// Carga el archivo en un <img> nativo y lo redibuja en canvas.
-// - PNG, WEBP, GIF → soportados por todos los browsers modernos
-// - HEIC/HEIF → soportado nativamente en Safari (macOS/iOS); en Chrome solo si
-//   el sistema operativo lo decodifica (macOS Monterey+). En Chrome/Windows no
-//   funciona sin librería externa.
-// Si la imagen no se puede cargar, lanza Error para que el llamador lo muestre.
+// ─── Detección de HEIC/HEIF ───────────────────────────────────────────────────
 
-function convertToJpeg(file: File, maxPx: number, quality: number): Promise<Blob> {
+function isHeicFile(file: File): boolean {
+  if (file.type === 'image/heic' || file.type === 'image/heif') return true;
+  // Algunos browsers no reportan el MIME type de HEIC → verificar extensión
+  return /\.(heic|heif)$/i.test(file.name);
+}
+
+// ─── Helpers de canvas ───────────────────────────────────────────────────────
+
+/**
+ * Carga un Blob en un <img> y lo redibuja en canvas redimensionado.
+ * Usado después de convertir HEIC o directamente para PNG/WEBP/JPG.
+ */
+function blobToResizedJpeg(source: Blob, maxPx: number, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img       = new Image();
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(source);
 
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
 
       const { naturalWidth: sw, naturalHeight: sh } = img;
-
-      if (!sw || !sh) {
-        reject(new Error('La imagen tiene dimensiones inválidas'));
-        return;
-      }
+      if (!sw || !sh) { reject(new Error('Dimensiones inválidas')); return; }
 
       const scale  = Math.min(1, maxPx / Math.max(sw, sh));
       const w      = Math.max(1, Math.round(sw * scale));
@@ -64,9 +61,7 @@ function convertToJpeg(file: File, maxPx: number, quality: number): Promise<Blob
       ctx.drawImage(img, 0, 0, w, h);
 
       canvas.toBlob(
-        (b) => b
-          ? resolve(b)
-          : reject(new Error('No se pudo generar el JPEG')),
+        (b) => b ? resolve(b) : reject(new Error('canvas.toBlob devolvió null')),
         'image/jpeg',
         quality,
       );
@@ -74,15 +69,39 @@ function convertToJpeg(file: File, maxPx: number, quality: number): Promise<Blob
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error(
-        'No se pudo leer la imagen. ' +
-        'Si es un archivo HEIC, abrilo en Fotos y exportalo como JPG, ' +
-        'o usá Safari en iPhone/Mac.',
-      ));
+      reject(new Error('No se pudo decodificar la imagen'));
     };
 
     img.src = objectUrl;
   });
+}
+
+// ─── Conversión completa: detecta formato y aplica pipeline correcto ──────────
+
+async function prepareJpeg(file: File): Promise<Blob> {
+  const MAX_PX  = 400;
+  const QUALITY = 0.85;
+
+  if (isHeicFile(file)) {
+    // heic2any: importación dinámica → no impacta el bundle si no se usa HEIC.
+    // Convierte HEIC/HEIF a JPEG en el browser sin soporte nativo del SO.
+    const heic2any = (await import('heic2any')).default;
+
+    const result = await heic2any({
+      blob:    file,
+      toType:  'image/jpeg',
+      quality: 0.9,          // alta calidad; canvas rebaja después
+    });
+
+    // heic2any puede devolver un Blob o Blob[] (álbumes multi-imagen)
+    const heicBlob = Array.isArray(result) ? result[0] : result;
+
+    // Redimensionar el JPEG resultante
+    return blobToResizedJpeg(heicBlob, MAX_PX, QUALITY);
+  }
+
+  // Para todos los demás formatos el browser puede decodificarlos nativamente
+  return blobToResizedJpeg(file, MAX_PX, QUALITY);
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -108,31 +127,27 @@ export default function AvatarUploader({
 }: AvatarUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Blob JPEG ya convertido (listo para subir)
   const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
-  // URL del blob convertido (para mostrar el preview)
   const [previewUrl,    setPreviewUrl]    = useState<string | null>(null);
 
-  const [converting,    setConverting]    = useState(false);
-  const [saving,        setSaving]        = useState(false);
-  const [saved,         setSaved]         = useState(false);
-  const [imgError,      setImgError]      = useState(false);
-  const [uploadError,   setUploadError]   = useState<string | null>(null);
+  const [converting,   setConverting]   = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [imgError,     setImgError]     = useState(false);
+  const [statusMsg,    setStatusMsg]    = useState<string | null>(null);
+  const [errorMsg,     setErrorMsg]     = useState<string | null>(null);
 
-  // ── Limpiar estado de selección ───────────────────────────────────────────
+  // ── Limpiar selección ──────────────────────────────────────────────────────
   function clearSelection() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setConvertedBlob(null);
     setPreviewUrl(null);
-    setUploadError(null);
+    setErrorMsg(null);
+    setStatusMsg(null);
     if (inputRef.current) inputRef.current.value = '';
   }
 
-  // ── Selección de archivo → conversión inmediata a JPEG ────────────────────
-  //
-  // Convertimos en este momento (no al guardar) para que:
-  //  a) El preview use siempre un JPEG válido → nunca imagen rota en el browser
-  //  b) Al guardar usamos el blob ya preparado (sin doble conversión)
+  // ── Selección de archivo ───────────────────────────────────────────────────
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -141,28 +156,30 @@ export default function AvatarUploader({
     setImgError(false);
     setSaved(false);
     setConverting(true);
+    setStatusMsg(isHeicFile(file) ? 'Convirtiendo HEIC…' : 'Procesando imagen…');
 
     try {
-      const blob       = await convertToJpeg(file, 400, 0.85);
-      const blobObjUrl = URL.createObjectURL(blob);
-
+      const blob    = await prepareJpeg(file);
+      const objUrl  = URL.createObjectURL(blob);
       setConvertedBlob(blob);
-      setPreviewUrl(blobObjUrl);
+      setPreviewUrl(objUrl);
+      setStatusMsg(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'No se pudo procesar la imagen';
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
       console.error('[AvatarUploader] conversión:', err);
-      setUploadError(msg);
+      setErrorMsg(`No se pudo procesar la imagen: ${msg}`);
+      setStatusMsg(null);
     } finally {
       setConverting(false);
     }
   }
 
-  // ── Guardar foto ──────────────────────────────────────────────────────────
+  // ── Guardar foto ───────────────────────────────────────────────────────────
   async function handleSave() {
     if (!convertedBlob || !userId) return;
 
     setSaving(true);
-    setUploadError(null);
+    setErrorMsg(null);
 
     try {
       const fd = new FormData();
@@ -176,29 +193,27 @@ export default function AvatarUploader({
 
       onUploadSuccess(json.url);
       clearSelection();
-
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error desconocido';
       console.error('[AvatarUploader] guardado:', err);
-      setUploadError(`No se pudo guardar la foto: ${msg}`);
+      setErrorMsg(`No se pudo guardar: ${msg}`);
     } finally {
       setSaving(false);
     }
   }
 
-  // ── Qué mostrar en el círculo ─────────────────────────────────────────────
-  // Prioridad: preview JPEG convertido → URL de DB/contexto → iniciales
+  // Prioridad: preview convertido → URL de DB/contexto → iniciales
   const foto = previewUrl ?? (imgError ? null : currentAvatarUrl);
 
   return (
     <div className="flex flex-col items-center gap-3">
 
-      {/* ── Círculo de foto 120 px ── */}
-      <div className="relative w-[120px] h-[120px] rounded-full overflow-hidden flex-shrink-0
-                      bg-brand-600">
+      {/* ── Círculo 120 px ── */}
+      <div className="relative w-[120px] h-[120px] rounded-full overflow-hidden
+                      flex-shrink-0 bg-brand-600">
         {foto ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -215,9 +230,9 @@ export default function AvatarUploader({
           </div>
         )}
 
-        {/* Spinner de conversión superpuesto */}
-        {converting && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+        {/* Spinner durante conversión o guardado */}
+        {(converting || saving) && (
+          <div className="absolute inset-0 bg-black/55 flex items-center justify-center">
             <svg className="animate-spin h-7 w-7 text-white" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10"
                       stroke="currentColor" strokeWidth="4" />
@@ -228,9 +243,13 @@ export default function AvatarUploader({
         )}
       </div>
 
-      {/* ── Botones de acción ── */}
+      {/* ── Mensaje de proceso (bajo el círculo) ── */}
+      {statusMsg && (
+        <p className="text-xs text-slate-500 animate-pulse">{statusMsg}</p>
+      )}
+
+      {/* ── Botones ── */}
       {!convertedBlob && !converting ? (
-        /* Sin imagen seleccionada */
         <button
           type="button"
           onClick={() => userId && inputRef.current?.click()}
@@ -241,7 +260,6 @@ export default function AvatarUploader({
           Subir foto
         </button>
       ) : convertedBlob && !converting ? (
-        /* Imagen convertida lista — confirmar o cancelar */
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -274,7 +292,7 @@ export default function AvatarUploader({
             Cancelar
           </button>
         </div>
-      ) : null /* converting: el spinner en el círculo ya da feedback */ }
+      ) : null}
 
       {/* ── Mensajes de estado ── */}
       {saved && (
@@ -282,13 +300,12 @@ export default function AvatarUploader({
           <span>✅</span> Foto actualizada
         </p>
       )}
-      {uploadError && (
-        <p className="text-xs text-red-600 flex items-center gap-1 text-center max-w-[200px]">
-          <span className="flex-shrink-0">⚠️</span> {uploadError}
+      {errorMsg && (
+        <p className="text-xs text-red-600 flex items-center gap-1 text-center max-w-[220px]">
+          <span className="flex-shrink-0">⚠️</span> {errorMsg}
         </p>
       )}
 
-      {/* Input oculto — acepta imágenes comunes y HEIC/HEIF */}
       <input
         ref={inputRef}
         type="file"
