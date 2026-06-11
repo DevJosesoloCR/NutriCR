@@ -25,14 +25,25 @@ async function comprimirImagen(file: File): Promise<Blob> {
 // ─── AvatarUpload ──────────────────────────────────────────────────────────────
 
 function AvatarUpload({ iniciales }: { iniciales: string }) {
-  const inputRef  = useRef<HTMLInputElement>(null);
-  const [avatarUrl,  setAvatarUrl]  = useState<string | null>(null);   // foto guardada en BD
-  const [preview,    setPreview]    = useState<string | null>(null);   // data-url local antes de confirmar
-  const [blobPend,   setBlobPend]   = useState<Blob | null>(null);     // comprimido listo para subir
-  const [subiendo,   setSubiendo]   = useState(false);
-  const [imgError,   setImgError]   = useState(false);                 // la URL actual da error 404/broken
+  const inputRef      = useRef<HTMLInputElement>(null);
+  // Guardamos el object URL del preview en un ref para poder revocarlo
+  // correctamente sin depender de closures sobre el estado.
+  const previewUrlRef = useRef<string | null>(null);
 
-  // Cargar avatar guardado desde la BD (fuente de verdad)
+  const [avatarUrl,    setAvatarUrl]    = useState<string | null>(null); // foto guardada en BD
+  const [preview,      setPreview]      = useState<string | null>(null); // object URL local antes de confirmar
+  const [blobPend,     setBlobPend]     = useState<Blob | null>(null);   // blob comprimido listo para subir
+  const [comprimiendo, setComprimiendo] = useState(false);               // canvas procesando
+  const [subiendo,     setSubiendo]     = useState(false);               // upload en curso
+  const [imgError,     setImgError]     = useState(false);               // URL guardada da 404/broken
+
+  // Limpiar object URL al desmontar el componente
+  useEffect(() => {
+    return () => { revocarPreview(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cargar avatar guardado desde la BD (fuente de verdad, no user_metadata)
   useEffect(() => {
     fetch('/api/user/me')
       .then((r) => r.ok ? r.json() : null)
@@ -43,24 +54,48 @@ function AvatarUpload({ iniciales }: { iniciales: string }) {
       .catch(() => {});
   }, []);
 
-  // Cuando el usuario selecciona un archivo: generar preview local + comprimir
+  /** Revoca el object URL del preview y limpia el ref */
+  function revocarPreview() {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+  }
+
+  /**
+   * Cuando el usuario selecciona un archivo:
+   * 1. URL.createObjectURL → preview inmediato (síncrono, sin FileReader)
+   * 2. comprimirImagen     → blob listo para subir (async, en paralelo)
+   */
   async function handleSeleccionar(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Vista previa inmediata
-    const reader = new FileReader();
-    reader.onloadend = () => setPreview(reader.result as string);
-    reader.readAsDataURL(file);
-    // Comprimir en paralelo
+
+    // Revocar preview anterior si había uno
+    revocarPreview();
+
+    // Object URL síncrono — disponible de inmediato para el <img>
+    const objectUrl = URL.createObjectURL(file);
+    previewUrlRef.current = objectUrl;
+    setPreview(objectUrl);
+    setBlobPend(null);
+    setComprimiendo(true);
+
+    // Comprimir en paralelo para obtener el blob final
     try {
       const blob = await comprimirImagen(file);
       setBlobPend(blob);
-    } catch { setBlobPend(null); }
-    // Reset el input para permitir seleccionar el mismo archivo otra vez
+    } catch {
+      setBlobPend(null);
+    } finally {
+      setComprimiendo(false);
+    }
+
+    // Reset input para permitir seleccionar el mismo archivo otra vez
     e.target.value = '';
   }
 
-  // Confirmar: subir el blob comprimido
+  /** Confirmar: subir blob comprimido al servidor */
   async function handleConfirmar() {
     if (!blobPend) return;
     setSubiendo(true);
@@ -70,28 +105,32 @@ function AvatarUpload({ iniciales }: { iniciales: string }) {
       const res  = await fetch('/api/user/avatar', { method: 'POST', body: fd });
       const json = await res.json();
       if (res.ok) {
-        setAvatarUrl(json.url);  // actualizar foto guardada
+        setAvatarUrl(json.url);
         setImgError(false);
       }
     } catch { /* silencioso */ }
     finally {
+      revocarPreview();
       setSubiendo(false);
       setPreview(null);
       setBlobPend(null);
     }
   }
 
-  // Cancelar: descartar preview sin subir nada
+  /** Cancelar: descartar preview sin subir nada */
   function handleCancelar() {
+    revocarPreview();
     setPreview(null);
     setBlobPend(null);
+    setComprimiendo(false);
   }
 
   // Qué mostrar en el círculo:
-  // - preview (data-url local) si estamos en paso de confirmación
-  // - avatarUrl si está guardado Y no dio error al cargar
-  // - iniciales como fallback
-  const mostrarFoto = preview ?? (imgError ? null : avatarUrl);
+  // - preview (object URL local) mientras estamos en modo confirmación
+  // - avatarUrl guardada si no dio error al cargar
+  // - iniciales como fallback final
+  const mostrarFoto     = preview ?? (imgError ? null : avatarUrl);
+  const confirmDisabled = subiendo || comprimiendo || !blobPend;
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -103,7 +142,8 @@ function AvatarUpload({ iniciales }: { iniciales: string }) {
             src={mostrarFoto}
             alt=""
             className="w-full h-full object-cover"
-            onError={() => { setImgError(true); }}
+            // onError solo aplica a la URL guardada, no al object URL de preview
+            onError={() => { if (!preview) setImgError(true); }}
           />
         ) : (
           <div className="w-full h-full bg-brand-600 flex items-center justify-center text-3xl font-bold text-white select-none">
@@ -111,8 +151,8 @@ function AvatarUpload({ iniciales }: { iniciales: string }) {
           </div>
         )}
 
-        {/* Overlay de carga */}
-        {subiendo && (
+        {/* Overlay de carga (comprimiendo o subiendo) */}
+        {(subiendo || comprimiendo) && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
             <svg className="animate-spin h-7 w-7 text-white" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -138,10 +178,10 @@ function AvatarUpload({ iniciales }: { iniciales: string }) {
           <button
             type="button"
             onClick={handleConfirmar}
-            disabled={subiendo || !blobPend}
+            disabled={confirmDisabled}
             className="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white text-sm font-semibold transition-colors"
           >
-            {subiendo ? 'Subiendo…' : 'Confirmar'}
+            {subiendo ? 'Subiendo…' : comprimiendo ? 'Procesando…' : 'Confirmar'}
           </button>
           <button
             type="button"
