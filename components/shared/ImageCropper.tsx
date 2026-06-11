@@ -7,15 +7,14 @@
  * Recibe imageSrc como data-URL o blob-URL y devuelve el recorte
  * como Blob JPEG via `onConfirm`.
  *
- * ⚠️  react-easy-crop v6 externaliza su CSS: sin este import las clases
- *     .reactEasyCrop_* no tienen estilos → pantalla negra y onCropComplete
- *     nunca dispara → botón Confirmar permanece deshabilitado.
+ * El CSS de react-easy-crop v6 se carga en app/globals.css (NO aquí) para
+ * evitar que TypeScript intente resolver react-easy-crop.css.d.ts, que tiene
+ * un carácter inválido (bug del paquete → TS1127). Webpack también usa
+ * tsconfig.paths para su resolución, así que cualquier path override en
+ * tsconfig redirige el import real y el CSS nunca llegaría al bundle.
  */
 
-// CRÍTICO: debe importarse antes de usar Cropper
-import 'react-easy-crop/react-easy-crop.css';
-
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Cropper from 'react-easy-crop';
 import type { Area } from 'react-easy-crop';
 
@@ -88,6 +87,17 @@ export default function ImageCropper({ imageSrc, onConfirm, onCancel }: Props) {
   const onCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     setPixels(croppedAreaPixels);
   }, []);
+
+  // ── DEBUG: verificar que imageSrc llega con valor al montar ──────────────
+  useEffect(() => {
+    console.log(
+      '[ImageCropper] montado — imageSrc:',
+      imageSrc
+        ? `✅ data:URL (${imageSrc.length} chars) → ${imageSrc.slice(0, 60)}…`
+        : '❌ VACÍO o null',
+    );
+    return () => { console.log('[ImageCropper] desmontado'); };
+  }, [imageSrc]);
 
   async function handleConfirm() {
     if (!pixels || pixels.width === 0 || pixels.height === 0) return;

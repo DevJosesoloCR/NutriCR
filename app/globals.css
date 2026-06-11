@@ -1,3 +1,11 @@
+/* react-easy-crop v6: externaliza su CSS. Se importa aquí (CSS global)
+   para que webpack lo bundlee sin pasar por el resolver de TypeScript, que
+   tiene un bug en el .d.ts del paquete (carácter inválido TS1127).
+   DEBE estar antes de @tailwind para que las clases .reactEasyCrop_*
+   no sean sobreescritas por los resets de base. La mayor especificidad de
+   los selectores de clase vs tag-selectors de Tailwind garantiza la prioridad. */
+@import 'react-easy-crop/react-easy-crop.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -12,6 +12,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import Card from '@/components/ui/Card';
+import { useAvatar } from '@/context/AvatarContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -295,6 +296,9 @@ function PulsingDot(props: any) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function InicioPage() {
+  // ── Avatar del paciente (desde AvatarContext, persiste entre navegaciones) ──
+  const { avatarUrl, iniciales: ctxIniciales } = useAvatar();
+
   const [data,        setData]       = useState<InicioData | null>(null);
   const [loading,     setLoading]    = useState(true);
   const [metrica,     setMetrica]    = useState<Metrica>('peso');
@@ -556,20 +560,53 @@ export default function InicioPage() {
       )}
 
       {/* ── Saludo ─────────────────────────────────────────────────────────── */}
-      <div className="pt-2">
-        {loading ? (
-          <>
-            <div className="h-3.5 bg-slate-100 rounded animate-pulse w-36 mb-1.5" />
-            <div className="h-7   bg-slate-100 rounded animate-pulse w-52" />
-          </>
-        ) : (
-          <>
-            <p className="text-slate-400 text-sm capitalize">{fecha}</p>
-            <h1 className="text-2xl font-bold text-slate-800 leading-tight">
-              {saludo}{nombre ? `, ${nombre}` : ''}&nbsp;👋
-            </h1>
-          </>
-        )}
+      <div className="pt-2 flex items-center justify-between gap-3">
+
+        {/* Texto */}
+        <div className="flex-1 min-w-0">
+          {loading ? (
+            <>
+              <div className="h-3.5 bg-slate-100 rounded animate-pulse w-36 mb-1.5" />
+              <div className="h-7   bg-slate-100 rounded animate-pulse w-52" />
+            </>
+          ) : (
+            <>
+              <p className="text-slate-400 text-sm capitalize">{fecha}</p>
+              <h1 className="text-2xl font-bold text-slate-800 leading-tight">
+                {saludo}{nombre ? `, ${nombre}` : ''}&nbsp;👋
+              </h1>
+            </>
+          )}
+        </div>
+
+        {/* Avatar circular → link al perfil */}
+        <Link
+          href="/paciente/perfil"
+          aria-label="Mi perfil"
+          className="flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 rounded-full"
+        >
+          {loading ? (
+            <div className="w-11 h-11 rounded-full bg-slate-100 animate-pulse" />
+          ) : (
+            <div className="w-11 h-11 rounded-full overflow-hidden ring-2 ring-white shadow-sm">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-brand-600 flex items-center justify-center">
+                  <span className="text-white font-bold text-base leading-none select-none">
+                    {ctxIniciales || nombre?.charAt(0)?.toUpperCase() || '?'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </Link>
+
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
