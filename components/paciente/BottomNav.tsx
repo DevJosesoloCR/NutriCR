@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useAvatar } from '@/context/AvatarContext';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ export default function BottomNav() {
   const pathname = usePathname();
   const router   = useRouter();
   const fabRef   = useRef<HTMLButtonElement>(null);
+  const { avatarUrl, iniciales } = useAvatar();
 
   const [open,   setOpen]   = useState(false);
   const [fabPos, setFabPos] = useState({ x: 0, y: 0 });
@@ -136,6 +138,7 @@ export default function BottomNav() {
             /* ── Regular nav link ── */
             if (!item.href) return null;
             const active = pathname === item.href;
+            const isPerfil = item.href === '/paciente/perfil';
             return (
               <Link
                 key={item.href}
@@ -145,7 +148,27 @@ export default function BottomNav() {
                   active ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600',
                 )}
               >
-                <span className="text-xl mb-0.5">{item.icon}</span>
+                {isPerfil ? (
+                  /* Avatar circular en vez del ícono 👤 */
+                  <div className={cn(
+                    'w-[22px] h-[22px] rounded-full overflow-hidden mb-0.5 flex-shrink-0 flex-shrink-0',
+                    active && 'ring-2 ring-brand-400',
+                  )}>
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : iniciales ? (
+                      <div className="w-full h-full bg-brand-600 flex items-center justify-center
+                                      text-[8px] font-bold text-white leading-none">
+                        {iniciales}
+                      </div>
+                    ) : (
+                      <span className="text-xl leading-none">{item.icon}</span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xl mb-0.5">{item.icon}</span>
+                )}
                 {item.label}
               </Link>
             );

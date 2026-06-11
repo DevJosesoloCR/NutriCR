@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
+import AvatarUpload from '@/components/shared/AvatarUpload';
+import { useAvatar } from '@/context/AvatarContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,105 +54,11 @@ function formatCodigo(raw: string): string {
   return clean.length > 4 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
 }
 
-// ─── Componente subida de avatar ──────────────────────────────────────────────
-
-function AvatarUpload({ iniciales }: { iniciales: string }) {
-  const inputRef  = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [subiendo, setSubiendo] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-
-  // Leer avatar desde tabla usuarios (fuente de verdad)
-  useEffect(() => {
-    fetch('/api/user/me')
-      .then((r) => r.ok ? r.json() : null)
-      .then((json) => { if (json?.data?.avatar_url) setAvatarUrl(json.data.avatar_url); })
-      .catch(() => {});
-  }, []);
-
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Preview local
-    const reader = new FileReader();
-    reader.onloadend = () => setPreview(reader.result as string);
-    reader.readAsDataURL(file);
-
-    // Comprimir a JPEG via canvas antes de subir
-    setSubiendo(true);
-    try {
-      const compressed = await comprimirImagen(file);
-      const fd = new FormData();
-      fd.append('file', compressed, 'avatar.jpg');
-      const res  = await fetch('/api/user/avatar', { method: 'POST', body: fd });
-      const json = await res.json();
-      if (res.ok) setAvatarUrl(json.url);
-    } catch { /* silencioso */ }
-    finally { setSubiendo(false); }
-  }
-
-  const foto = preview ?? avatarUrl;
-
-  return (
-    <div className="flex flex-col items-center gap-2 mb-2">
-      <div
-        className="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer group"
-        onClick={() => inputRef.current?.click()}
-      >
-        {foto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={foto} alt="Avatar" className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full bg-brand-100 flex items-center justify-center text-3xl font-bold text-brand-700">
-            {iniciales || '👤'}
-          </div>
-        )}
-        {/* Overlay al hover */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="text-white text-2xl">{subiendo ? '⏳' : '📷'}</span>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={subiendo}
-        className="text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors disabled:opacity-50"
-      >
-        {subiendo ? 'Subiendo…' : 'Cambiar foto'}
-      </button>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-    </div>
-  );
-}
-
-async function comprimirImagen(file: File): Promise<Blob> {
-  const MAX = 512;
-  const objectUrl = URL.createObjectURL(file);
-  const img = await new Promise<HTMLImageElement>((res, rej) => {
-    const el = new Image();
-    el.onload  = () => res(el);
-    el.onerror = rej;
-    el.src = objectUrl;
-  }).finally(() => URL.revokeObjectURL(objectUrl));
-
-  let w = img.naturalWidth;
-  let h = img.naturalHeight;
-  if (w > MAX || h > MAX) {
-    if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
-    else        { w = Math.round(w * MAX / h); h = MAX; }
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width  = w;
-  canvas.height = h;
-  canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-  return new Promise((res, rej) => canvas.toBlob((b) => b ? res(b) : rej(new Error('canvas')), 'image/jpeg', 0.85));
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PerfilPage() {
   const router = useRouter();
+  const { iniciales: ctxIniciales } = useAvatar();
 
   // ── Auth user ──────────────────────────────────────────────────────────────
   const [user,       setUser]      = useState<User | null>(null);
@@ -349,7 +257,7 @@ export default function PerfilPage() {
 
       {/* ── Avatar + nombre ── */}
       <div className="flex flex-col items-center py-6">
-        <AvatarUpload iniciales={loading ? '' : iniciales} />
+        <AvatarUpload iniciales={ctxIniciales || (loading ? '' : iniciales)} />
         {loading ? (
           <div className="h-4 bg-slate-100 rounded animate-pulse w-32 mb-2" />
         ) : (

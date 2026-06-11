@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
+import { useAvatar } from '@/context/AvatarContext';
 
 interface SidebarProps {
   expanded:  boolean;
@@ -25,28 +26,10 @@ export default function Sidebar({ expanded, animated, onToggle }: SidebarProps) 
   const pathname = usePathname();
   const router   = useRouter();
 
-  // ── Nombre del nutricionista autenticado ──────────────────────────────────
-  const [nombreNutr, setNombreNutr] = useState<string>('Nutricionista');
-  const [avatarUrl,  setAvatarUrl]  = useState<string | null>(null);
-  const [iniciales,  setIniciales]  = useState<string>('N');
-
-  useEffect(() => {
-    // Leer de tabla usuarios para avatar actualizado; nombre desde user_metadata
-    Promise.all([
-      fetch('/api/user/me').then((r) => r.ok ? r.json() : null),
-      createClient().auth.getUser(),
-    ]).then(([meJson, { data: { user } }]) => {
-      // Nombre desde user_metadata (siempre fresco en registro)
-      const nombre   = user?.user_metadata?.nombre   as string | undefined;
-      const apellido = user?.user_metadata?.apellido as string | undefined;
-      if (nombre) {
-        setNombreNutr(`${nombre}${apellido ? ' ' + apellido : ''}`);
-        setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
-      }
-      // Avatar desde tabla usuarios (fuente de verdad)
-      if (meJson?.data?.avatar_url) setAvatarUrl(meJson.data.avatar_url);
-    }).catch(() => {});
-  }, []);
+  // ── Usuario autenticado — desde AvatarContext (persiste entre navegaciones) ──
+  const { avatarUrl, iniciales: inicialesCtx, nombreCompleto } = useAvatar();
+  const iniciales  = inicialesCtx  || 'N';
+  const nombreNutr = nombreCompleto || 'Nutricionista';
 
   async function handleLogout() {
     const supabase = createClient();

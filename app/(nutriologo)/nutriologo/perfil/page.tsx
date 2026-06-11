@@ -1,198 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
+import AvatarUpload from '@/components/shared/AvatarUpload';
+import { useAvatar } from '@/context/AvatarContext';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function comprimirImagen(file: File): Promise<Blob> {
-  const MAX = 512;
-  const objectUrl = URL.createObjectURL(file);
-  const img = await new Promise<HTMLImageElement>((res, rej) => {
-    const el = new Image(); el.onload = () => res(el); el.onerror = rej; el.src = objectUrl;
-  }).finally(() => URL.revokeObjectURL(objectUrl));
-  let w = img.naturalWidth; let h = img.naturalHeight;
-  if (w > MAX || h > MAX) {
-    if (w >= h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; }
-  }
-  const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-  canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-  return new Promise((res, rej) => canvas.toBlob((b) => b ? res(b) : rej(new Error('canvas')), 'image/jpeg', 0.85));
-}
-
-// ─── AvatarUpload ──────────────────────────────────────────────────────────────
-
-function AvatarUpload({ iniciales }: { iniciales: string }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const [avatarUrl,    setAvatarUrl]    = useState<string | null>(null); // foto guardada en BD
-  const [preview,      setPreview]      = useState<string | null>(null); // data-url local (base64)
-  const [blobPend,     setBlobPend]     = useState<Blob | null>(null);   // blob comprimido listo para subir
-  const [comprimiendo, setComprimiendo] = useState(false);
-  const [subiendo,     setSubiendo]     = useState(false);
-  const [imgError,     setImgError]     = useState(false);               // avatarUrl da 404/roto
-
-  // Cargar avatar desde la BD (fuente de verdad, no user_metadata)
-  useEffect(() => {
-    fetch('/api/user/me')
-      .then((r) => r.ok ? r.json() : null)
-      .then((json) => {
-        const url = json?.data?.avatar_url as string | undefined;
-        if (url) { setAvatarUrl(url); setImgError(false); }
-      })
-      .catch(() => {});
-  }, []);
-
-  /**
-   * Al seleccionar un archivo:
-   * 1. FileReader.readAsDataURL → data-url base64 para preview inmediato
-   *    (mismo patrón que el perfil del paciente, que funciona correctamente;
-   *    NO usamos URL.createObjectURL porque los blob: URLs pueden quedar
-   *    invalidos si el browser libera el File al limpiar el input)
-   * 2. comprimirImagen → blob JPEG comprimido listo para el upload en Confirmar
-   *
-   * IMPORTANTE: no llamamos e.target.value = '' porque puede causar que el
-   * browser libere el File antes de que FileReader termine de leerlo.
-   */
-  async function handleSeleccionar(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Limpiar estado previo
-    setPreview(null);
-    setBlobPend(null);
-
-    // 1. Preview via FileReader — produce un data: URL autocontenido que nunca expira
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === 'string' && reader.result.startsWith('data:')) {
-        setPreview(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
-
-    // 2. Comprimir en paralelo para tener el blob listo cuando el usuario confirme
-    setComprimiendo(true);
-    try {
-      const blob = await comprimirImagen(file);
-      setBlobPend(blob);
-    } catch {
-      setBlobPend(null);
-    } finally {
-      setComprimiendo(false);
-    }
-  }
-
-  /** Confirmar: subir blob comprimido al servidor */
-  async function handleConfirmar() {
-    if (!blobPend) return;
-    setSubiendo(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', blobPend, 'avatar.jpg');
-      const res  = await fetch('/api/user/avatar', { method: 'POST', body: fd });
-      const json = await res.json();
-      if (res.ok) {
-        setAvatarUrl(json.url);
-        setImgError(false);
-      }
-    } catch { /* silencioso */ }
-    finally {
-      setSubiendo(false);
-      setPreview(null);
-      setBlobPend(null);
-    }
-  }
-
-  /** Cancelar: descartar preview sin subir nada */
-  function handleCancelar() {
-    setPreview(null);
-    setBlobPend(null);
-    setComprimiendo(false);
-  }
-
-  // Qué mostrar en el círculo:
-  // · preview  → data-url base64 mientras esperamos confirmación
-  // · avatarUrl → foto guardada (si no dio error al cargar)
-  // · null     → cae al fallback de iniciales
-  const foto = preview ?? (imgError ? null : avatarUrl);
-
-  return (
-    <div className="flex flex-col items-center gap-3">
-      {/* Círculo 100 px */}
-      <div className="relative w-[100px] h-[100px] rounded-full overflow-hidden flex-shrink-0">
-        {foto ? (
-          // key={foto} fuerza un nuevo elemento DOM cada vez que cambia la fuente
-          // (evita que el browser reutilice un <img> que haya entrado en estado de error)
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={foto}
-            src={foto}
-            alt=""
-            className="w-full h-full object-cover"
-            onError={() => { if (!preview) setImgError(true); }}
-          />
-        ) : (
-          <div className="w-full h-full bg-brand-600 flex items-center justify-center text-3xl font-bold text-white select-none">
-            {iniciales || 'N'}
-          </div>
-        )}
-
-        {/* Overlay spinner mientras comprime o sube */}
-        {(subiendo || comprimiendo) && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <svg className="animate-spin h-7 w-7 text-white" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-            </svg>
-          </div>
-        )}
-      </div>
-
-      {/* Botones según estado */}
-      {!preview ? (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="text-sm text-brand-600 hover:text-brand-800 font-medium transition-colors"
-        >
-          Cambiar foto
-        </button>
-      ) : (
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleConfirmar}
-            disabled={subiendo || comprimiendo || !blobPend}
-            className="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white text-sm font-semibold transition-colors"
-          >
-            {subiendo ? 'Subiendo…' : comprimiendo ? 'Procesando…' : 'Confirmar'}
-          </button>
-          <button
-            type="button"
-            onClick={handleCancelar}
-            disabled={subiendo}
-            className="px-4 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold transition-colors disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-        </div>
-      )}
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleSeleccionar}
-      />
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 const ESPECIALIDADES = [
   'Pérdida de peso',
@@ -328,6 +142,7 @@ function CambiarPassword({ email }: { email: string }) {
 
 export default function PerfilNutriologoPage() {
   const router = useRouter();
+  const { iniciales: ctxIniciales } = useAvatar();
   const [user,       setUser]      = useState<User | null>(null);
   const [loading,    setLoading]   = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -394,9 +209,10 @@ export default function PerfilNutriologoPage() {
   const nombre   = user?.user_metadata?.nombre  as string | undefined;
   const apellido = user?.user_metadata?.apellido as string | undefined;
   const email    = user?.email ?? '';
-  const iniciales = nombre
+  // Usar iniciales del contexto (DB) cuando estén disponibles, con fallback a user_metadata
+  const iniciales = ctxIniciales || (nombre
     ? (nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase()
-    : '👤';
+    : 'N');
 
   return (
     <div className="max-w-xl mx-auto space-y-6 py-6 px-4">

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
+import { useAvatar } from '@/context/AvatarContext';
 
 interface Notificacion {
   id: string;
@@ -43,21 +44,8 @@ export default function PacienteHeader() {
   const [showModal,   setShowModal]   = useState(false);
   const [marcando,    setMarcando]    = useState(false);
 
-  // Avatar del paciente — leído desde tabla usuarios (fuente de verdad)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [iniciales, setIniciales] = useState('');
-
-  useEffect(() => {
-    fetch('/api/user/me')
-      .then((r) => r.ok ? r.json() : null)
-      .then((json) => {
-        if (!json?.data) return;
-        const { nombre, apellido, avatar_url } = json.data;
-        if (nombre) setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
-        if (avatar_url) setAvatarUrl(avatar_url);
-      })
-      .catch(() => {/* silencioso */});
-  }, []);
+  // Avatar del paciente — desde AvatarContext (se mantiene entre navegaciones)
+  const { avatarUrl, iniciales } = useAvatar();
 
   const cargarNotifs = useCallback(async () => {
     try {

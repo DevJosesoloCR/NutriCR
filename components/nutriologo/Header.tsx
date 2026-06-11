@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useAvatar } from '@/context/AvatarContext';
 
 interface AlertaNutriologo {
   id:      string;
@@ -41,32 +41,9 @@ export default function NutriHeader({ onToggle }: NutriHeaderProps) {
   const pathname = usePathname();
   const title    = pageTitles[pathname] ?? 'Nutri Smart CR';
 
-  // ── Usuario / avatar ─────────────────────────────────────────────────────────
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [iniciales, setIniciales] = useState('N');
-
-  useEffect(() => {
-    // Leer de la tabla usuarios (fuente de verdad) en lugar de user_metadata cacheado
-    fetch('/api/user/me')
-      .then((r) => r.ok ? r.json() : null)
-      .then((json) => {
-        if (!json?.data) return;
-        const { nombre, apellido, avatar_url } = json.data;
-        if (nombre) setIniciales((nombre.charAt(0) + (apellido?.charAt(0) ?? '')).toUpperCase());
-        if (avatar_url) setAvatarUrl(avatar_url);
-      })
-      .catch(() => {
-        // Fallback al user_metadata si la API falla
-        createClient().auth.getUser().then(({ data: { user } }) => {
-          if (!user) return;
-          const n = user.user_metadata?.nombre    as string | undefined;
-          const a = user.user_metadata?.apellido  as string | undefined;
-          const v = user.user_metadata?.avatar_url as string | undefined;
-          if (n) setIniciales((n.charAt(0) + (a?.charAt(0) ?? '')).toUpperCase());
-          if (v) setAvatarUrl(v);
-        });
-      });
-  }, []);
+  // ── Usuario / avatar — desde AvatarContext (persiste entre navegaciones) ─────
+  const { avatarUrl, iniciales: inicialesCtx } = useAvatar();
+  const iniciales = inicialesCtx || 'N';
 
   // ── Alertas / notificaciones ────────────────────────────────────────────────
   const [showNotifs, setShowNotifs] = useState(false);
@@ -203,15 +180,16 @@ export default function NutriHeader({ onToggle }: NutriHeaderProps) {
         {/* ── Avatar → perfil ── */}
         <Link
           href="/nutriologo/perfil"
-          className="w-11 h-11 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 hover:ring-2 hover:ring-brand-300 transition-all"
+          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center
+                     flex-shrink-0 hover:ring-2 hover:ring-brand-300 transition-all"
           aria-label="Mi perfil"
           title="Mi perfil"
         >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover rounded-xl" />
+            <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full rounded-xl bg-brand-600 flex items-center justify-center">
+            <div className="w-full h-full bg-brand-600 flex items-center justify-center">
               <span className="text-white font-bold text-sm">{iniciales}</span>
             </div>
           )}
