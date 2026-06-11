@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
-import AvatarUpload from '@/components/shared/AvatarUpload';
-import { useAvatar } from '@/context/AvatarContext';
+import AvatarUploader from '@/components/AvatarUploader';
+import { useAvatar }    from '@/context/AvatarContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ function formatCodigo(raw: string): string {
 
 export default function PerfilPage() {
   const router = useRouter();
-  const { iniciales: ctxIniciales } = useAvatar();
+  const { avatarUrl, iniciales: ctxIniciales, setAvatarUrl } = useAvatar();
 
   // ── Auth user ──────────────────────────────────────────────────────────────
   const [user,       setUser]      = useState<User | null>(null);
@@ -257,7 +257,12 @@ export default function PerfilPage() {
 
       {/* ── Avatar + nombre ── */}
       <div className="flex flex-col items-center py-6">
-        <AvatarUpload iniciales={ctxIniciales || (loading ? '' : iniciales)} />
+        <AvatarUploader
+          userId={user?.id ?? null}
+          currentAvatarUrl={avatarUrl}
+          iniciales={ctxIniciales || (loading ? '' : iniciales)}
+          onUploadSuccess={setAvatarUrl}
+        />
         {loading ? (
           <div className="h-4 bg-slate-100 rounded animate-pulse w-32 mb-2" />
         ) : (

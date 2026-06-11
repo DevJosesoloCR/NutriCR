@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
-import AvatarUpload from '@/components/shared/AvatarUpload';
-import { useAvatar } from '@/context/AvatarContext';
+import AvatarUploader from '@/components/AvatarUploader';
+import { useAvatar }    from '@/context/AvatarContext';
 
 
 const ESPECIALIDADES = [
@@ -142,7 +142,7 @@ function CambiarPassword({ email }: { email: string }) {
 
 export default function PerfilNutriologoPage() {
   const router = useRouter();
-  const { iniciales: ctxIniciales } = useAvatar();
+  const { avatarUrl, iniciales: ctxIniciales, setAvatarUrl } = useAvatar();
   const [user,       setUser]      = useState<User | null>(null);
   const [loading,    setLoading]   = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -224,7 +224,12 @@ export default function PerfilNutriologoPage() {
         <div className="flex flex-col items-center mb-5">
           {/* Siempre montado (igual que perfil del paciente) para que el chunk
               dinámico de ImageCropper empiece a cargarse desde el primer render. */}
-          <AvatarUpload iniciales={ctxIniciales || (loading ? '' : iniciales)} />
+          <AvatarUploader
+            userId={user?.id ?? null}
+            currentAvatarUrl={avatarUrl}
+            iniciales={ctxIniciales || (loading ? '' : iniciales)}
+            onUploadSuccess={setAvatarUrl}
+          />
           {!loading && (
             <div className="text-center mt-1">
               <p className="font-semibold text-slate-800 text-lg">
