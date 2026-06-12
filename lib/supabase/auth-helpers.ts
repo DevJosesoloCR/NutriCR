@@ -181,3 +181,35 @@ export async function requireAuth(): Promise<AuthResult<{ userId: string }>> {
     return { ok: false, response: NextResponse.json({ error: 'Error de autenticación' }, { status: 500 }) };
   }
 }
+
+// ─── requireAdmin ─────────────────────────────────────────────────────────────
+/**
+ * Verifica que el usuario autenticado es el administrador de la plataforma.
+ * La identidad se define por ADMIN_EMAIL (variable de entorno del servidor).
+ * Uso exclusivo en Route Handlers del panel /admin.
+ */
+export interface AdminSession {
+  userId: string;
+  email:  string;
+}
+
+export async function requireAdmin(): Promise<AuthResult<AdminSession>> {
+  try {
+    const { data: { user } } = await createAuthClient().auth.getUser();
+    if (!user) return { ok: false, response: unauthorized() };
+
+    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+    if (!adminEmail) {
+      console.error('[requireAdmin] ADMIN_EMAIL no configurado');
+      return { ok: false, response: forbidden('Panel de admin no configurado') };
+    }
+
+    if ((user.email ?? '').toLowerCase() !== adminEmail) {
+      return { ok: false, response: forbidden('Acceso denegado') };
+    }
+
+    return { ok: true, data: { userId: user.id, email: user.email! } };
+  } catch {
+    return { ok: false, response: NextResponse.json({ error: 'Error de autenticación' }, { status: 500 }) };
+  }
+}
