@@ -93,7 +93,8 @@ export function buildResumen(counts: Record<GrupoKey, number>): string {
 interface Props {
   value:    string;                  // porciones como string (lo que se guarda)
   onChange: (text: string) => void;  // devuelve el resumen actualizado
-  compact?: boolean;                 // modo compacto para la tabla inline
+  /** 2 columnas siempre (para celda de tabla). Sin compact → 4 cols en pantallas anchas. */
+  compact?: boolean;
 }
 
 export default function PorcionesSelector({ value, onChange, compact = false }: Props) {
@@ -124,9 +125,16 @@ export default function PorcionesSelector({ value, onChange, compact = false }: 
 
   return (
     <div className="space-y-1.5">
-      {/* Grid de chips 2 columnas */}
+      {/*
+        Grid de chips — siempre 2 columnas en modo compact (tabla).
+        Cada chip tiene un ancho mínimo garantizado para que el label
+        nunca se recorte: los controles ocupan ~62 px fijos y el label
+        "Vegetal" (el más largo) ~42 px → chip total ~110 px.
+        Con la columna de Porciones en w-80 (320 px) cada celda del
+        grid mide (320-24)/2-2 = 146 px → sobra margen de ~36 px.
+      */}
       <div className={cn(
-        'grid gap-1',
+        'grid gap-1.5',
         compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4',
       )}>
         {GRUPOS.map(({ key, label, icon, color, colorBg }) => {
@@ -136,7 +144,9 @@ export default function PorcionesSelector({ value, onChange, compact = false }: 
             <div
               key={key}
               className={cn(
-                'flex items-center gap-1 rounded-lg border px-1.5 py-1 transition-all',
+                // El chip no recorta: whitespace-nowrap en el label
+                // y el contenedor es flex sin overflow hidden.
+                'flex items-center gap-1 rounded-lg border px-2 py-1.5 transition-all',
                 active
                   ? cn(colorBg, 'shadow-sm')
                   : 'bg-slate-50 border-slate-200',
@@ -148,11 +158,11 @@ export default function PorcionesSelector({ value, onChange, compact = false }: 
                 onClick={() => adjust(key, -1)}
                 disabled={n === 0}
                 className={cn(
-                  'w-[18px] h-[18px] rounded flex items-center justify-center',
-                  'text-[11px] font-black leading-none select-none transition-colors flex-shrink-0',
+                  'w-5 h-5 rounded flex items-center justify-center flex-shrink-0',
+                  'text-xs font-black leading-none select-none transition-colors',
                   active
-                    ? 'bg-white/70 text-slate-600 hover:bg-white hover:text-slate-800'
-                    : 'bg-slate-200 text-slate-300 disabled:opacity-50 cursor-default',
+                    ? 'bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900'
+                    : 'bg-slate-200 text-slate-300 disabled:opacity-40 cursor-default',
                 )}
                 aria-label={`Restar ${label}`}
               >
@@ -172,10 +182,10 @@ export default function PorcionesSelector({ value, onChange, compact = false }: 
                 type="button"
                 onClick={() => adjust(key, +1)}
                 className={cn(
-                  'w-[18px] h-[18px] rounded flex items-center justify-center',
-                  'text-[11px] font-black leading-none select-none transition-colors flex-shrink-0',
+                  'w-5 h-5 rounded flex items-center justify-center flex-shrink-0',
+                  'text-xs font-black leading-none select-none transition-colors',
                   active
-                    ? 'bg-white/70 text-slate-600 hover:bg-white hover:text-slate-800'
+                    ? 'bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900'
                     : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700',
                 )}
                 aria-label={`Sumar ${label}`}
@@ -183,13 +193,15 @@ export default function PorcionesSelector({ value, onChange, compact = false }: 
                 +
               </button>
 
-              {/* Icono + Etiqueta */}
+              {/* Icono + Etiqueta — sin truncate, sin min-w-0 */}
               <span className={cn(
-                'text-[10px] leading-none truncate flex items-center gap-0.5 min-w-0',
+                'flex items-center gap-0.5 flex-shrink-0',
                 active ? color : 'text-slate-500',
               )}>
-                <span>{icon}</span>
-                <span className="font-medium truncate">{label}</span>
+                <span className="text-[11px] leading-none">{icon}</span>
+                <span className="text-[10px] font-semibold leading-none whitespace-nowrap">
+                  {label}
+                </span>
               </span>
             </div>
           );
@@ -198,9 +210,9 @@ export default function PorcionesSelector({ value, onChange, compact = false }: 
 
       {/* Resumen */}
       <div className={cn(
-        'rounded-lg px-2 py-1.5 min-h-[24px] transition-colors',
+        'rounded-lg px-2.5 py-1.5 min-h-[26px] transition-colors',
         tieneAlguno
-          ? 'bg-green-50 border border-green-100'
+          ? 'bg-green-50 border border-green-200'
           : 'bg-slate-50 border border-slate-100',
       )}>
         {tieneAlguno ? (

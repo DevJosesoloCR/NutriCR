@@ -1518,16 +1518,20 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
       >
         {/* ── Tabla de tiempos de comida ── */}
         <div className="overflow-x-auto -mx-1">
-          <table className="w-full text-sm border-collapse min-w-[720px]">
+          {/*
+            Distribución de columnas (igual que en ModalPlan — min 740 px):
+              Tiempo    : 132 px  Horario : 76 px  Porciones : 320 px  Menú : resto
+          */}
+          <table className="w-full text-sm border-collapse min-w-[740px]">
             <thead>
               <tr className="bg-brand-50">
-                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide rounded-tl-lg w-36">
+                <th className="text-left px-2 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide rounded-tl-lg w-[132px]">
                   Tiempo
                 </th>
-                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-24">
+                <th className="text-left px-2 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-[76px]">
                   Horario
                 </th>
-                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-64">
+                <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-[320px]">
                   Porciones por grupo
                 </th>
                 <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide rounded-tr-lg">
@@ -1538,8 +1542,8 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
             <tbody className="divide-y divide-slate-100">
               {TIEMPOS_COMIDA_CONFIG.map(({ key, label, icon }) => (
                 <tr key={key} className="align-top hover:bg-slate-50 transition-colors">
-                  {/* Tiempo de comida */}
-                  <td className="px-3 py-3 font-medium text-slate-700 whitespace-nowrap">
+                  {/* Tiempo */}
+                  <td className="px-2 py-3 font-medium text-slate-700 whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
                       <span className="text-base leading-none">{icon}</span>
                       <span className="text-sm">{label}</span>
@@ -1547,17 +1551,18 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
                   </td>
 
                   {/* Horario */}
-                  <td className="px-3 py-3">
+                  <td className="px-2 py-3">
                     <input
                       type="text"
                       value={planClinico.tiempos[key].horario}
                       onChange={(e) => updateTiempo(key, 'horario', e.target.value)}
                       placeholder="7:30 AM"
-                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
+                      className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm
+                                 focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
                     />
                   </td>
 
-                  {/* Porciones — selector interactivo por grupo de intercambio */}
+                  {/* Porciones */}
                   <td className="px-3 py-3">
                     <PorcionesSelector
                       value={planClinico.tiempos[key].porciones}
@@ -1573,7 +1578,9 @@ export default function PacienteDetallePage({ params }: { params: { id: string }
                       onChange={(e) => updateTiempo(key, 'ejemplo_menu', e.target.value)}
                       placeholder={`Opciones para ${label.toLowerCase()}…`}
                       rows={3}
-                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none bg-white placeholder:text-slate-300"
+                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm
+                                 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none
+                                 bg-white placeholder:text-slate-300"
                     />
                   </td>
                 </tr>

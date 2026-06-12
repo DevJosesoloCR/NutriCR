@@ -239,16 +239,23 @@ function ModalPlan({
               Tiempos de comida
             </p>
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full text-sm border-collapse min-w-[700px]">
+              {/*
+                Distribución de columnas (ancho mínimo total 740 px):
+                  Tiempo    : 132 px  — icono + "Colado Nocturno" caben con holgura
+                  Horario   :  76 px  — input "10:00 AM" a text-xs
+                  Porciones : 320 px  — 2 cols × 146 px/chip + 4 px gap + 24 px padding
+                  Menú      : resto   — textarea crece libre
+              */}
+              <table className="w-full text-sm border-collapse min-w-[740px]">
                 <thead>
                   <tr className="bg-brand-50">
-                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-36">
+                    <th className="text-left px-2 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-[132px]">
                       Tiempo
                     </th>
-                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-24">
+                    <th className="text-left px-2 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-[76px]">
                       Horario
                     </th>
-                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-64">
+                    <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide w-[320px]">
                       Porciones por grupo
                     </th>
                     <th className="text-left px-3 py-2.5 text-xs font-bold text-brand-700 uppercase tracking-wide">
@@ -259,19 +266,22 @@ function ModalPlan({
                 <tbody className="divide-y divide-slate-100">
                   {TIEMPOS_CONFIG.map(({ key, label, icon }) => (
                     <tr key={key} className="align-top hover:bg-slate-50/60">
-                      <td className="px-3 py-3 font-medium text-slate-700 whitespace-nowrap">
-                        <span className="mr-1">{icon}</span>{label}
+                      {/* Tiempo */}
+                      <td className="px-2 py-3 font-medium text-slate-700 whitespace-nowrap text-sm">
+                        <span className="mr-1 text-base">{icon}</span>{label}
                       </td>
-                      <td className="px-3 py-3">
+                      {/* Horario */}
+                      <td className="px-2 py-3">
                         <input
                           type="text"
                           value={form.tiempos[key].horario}
                           onChange={(e) => updateTiempo(key, 'horario', e.target.value)}
                           placeholder="7:30 AM"
-                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs
+                          className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs
                                      focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white"
                         />
                       </td>
+                      {/* Porciones */}
                       <td className="px-3 py-3">
                         <PorcionesSelector
                           value={form.tiempos[key].porciones}
@@ -279,6 +289,7 @@ function ModalPlan({
                           compact
                         />
                       </td>
+                      {/* Ejemplo de menú */}
                       <td className="px-3 py-3">
                         <textarea
                           value={form.tiempos[key].ejemplo_menu}
