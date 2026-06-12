@@ -17,6 +17,8 @@ export default async function AdminLayout({
 }) {
   const { data: { user } } = await createAuthClient().auth.getUser();
 
+  console.log('ADMIN_EMAIL env:', process.env.ADMIN_EMAIL, 'user email:', user?.email);
+
   const adminEmail = (process.env.ADMIN_EMAIL ?? '').toLowerCase().trim();
 
   if (!user || !adminEmail || (user.email ?? '').toLowerCase() !== adminEmail) {

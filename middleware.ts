@@ -45,6 +45,7 @@ function decodeJWTPayload(token: string): Record<string, unknown> | null {
 
 interface SessionUser {
   tipo_usuario: string | undefined;
+  email:        string | undefined;
 }
 
 /**
@@ -97,8 +98,9 @@ function getSessionUser(request: NextRequest): SessionUser | null {
     if (expiresAt < Math.floor(Date.now() / 1000) - 60) return null;
 
     const userMeta = payload?.user_metadata as { tipo_usuario?: string } | undefined;
+    const email    = payload?.email as string | undefined;
 
-    return { tipo_usuario: userMeta?.tipo_usuario };
+    return { tipo_usuario: userMeta?.tipo_usuario, email };
   } catch {
     return null;
   }
@@ -110,15 +112,41 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const user = getSessionUser(request);
 
-  // ── Rutas de auth — redirigir si ya hay sesión activa ──────────────────────
+  // ── Admin: detectar si el usuario es el dueño de la plataforma ───────────
+  // Comparación de email extraído del JWT con la variable de entorno.
+  const adminEmail = (process.env.ADMIN_EMAIL ?? '').toLowerCase().trim();
+  const isAdmin    = !!adminEmail && !!(user?.email) &&
+                     user.email.toLowerCase() === adminEmail;
+
+  // ── Rutas /admin — protegidas para el admin ───────────────────────────────
+  if (pathname.startsWith('/admin')) {
+    if (!user) {
+      // Sin sesión → login con ?next=/admin para volver después del login
+      const loginUrl = new URL('/auth/login', request.url);
+      loginUrl.searchParams.set('next', '/admin');
+      return NextResponse.redirect(loginUrl);
+    }
+    if (!isAdmin) {
+      // Sesión activa pero no es el admin → redirigir al inicio
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    // Admin confirmado → dejar pasar (el layout hace la verificación final)
+    return NextResponse.next();
+  }
+
+  // ── Rutas de auth — redirigir si ya hay sesión activa ────────────────────
   if (pathname.startsWith('/auth/') && user) {
+    // Admin activo en /auth/* → ir directo al panel admin
+    if (isAdmin) {
+      return NextResponse.redirect(new URL('/admin', request.url));
+    }
     const dest = user.tipo_usuario === 'paciente'
       ? '/paciente/inicio'
       : '/nutriologo/dashboard';
     return NextResponse.redirect(new URL(dest, request.url));
   }
 
-  // ── Rutas protegidas ───────────────────────────────────────────────────────
+  // ── Rutas protegidas ──────────────────────────────────────────────────────
   const esNutriologo = pathname.startsWith('/nutriologo');
   const esPaciente   = pathname.startsWith('/paciente');
 
@@ -142,8 +170,12 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // ── Raíz "/" — redirigir al dashboard correcto si hay sesión ───────────────
+  // ── Raíz "/" — redirigir al dashboard correcto si hay sesión ─────────────
   if (pathname === '/') {
+    if (isAdmin) {
+      // Admin en raíz → ir al panel admin
+      return NextResponse.redirect(new URL('/admin', request.url));
+    }
     if (user) {
       const dest = user.tipo_usuario === 'paciente'
         ? '/paciente/inicio'
