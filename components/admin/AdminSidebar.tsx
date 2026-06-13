@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
@@ -22,12 +22,13 @@ export default function AdminSidebar({
   onToggle:  () => void;
 }) {
   const pathname = usePathname();
-  const router   = useRouter();
 
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push('/');
+    // Redirigir siempre a la pantalla de login del admin,
+    // no a la landing ni al login de nutricionistas.
+    window.location.href = '/admin/login';
   }
 
   return (

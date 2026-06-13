@@ -108,6 +108,16 @@ function getSessionUser(request: NextRequest): SessionUser | null {
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
+/**
+ * Devuelve NextResponse.next() inyectando el header `x-pathname`
+ * para que los layouts puedan conocer la ruta actual (sin acceso al router).
+ */
+function passThrough(request: NextRequest): NextResponse {
+  const headers = new Headers(request.headers);
+  headers.set('x-pathname', request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const user = getSessionUser(request);
@@ -118,25 +128,33 @@ export function middleware(request: NextRequest) {
   const isAdmin    = !!adminEmail && !!(user?.email) &&
                      user.email.toLowerCase() === adminEmail;
 
-  // ── Rutas /admin — protegidas para el admin ───────────────────────────────
+  // ── Rutas /admin ──────────────────────────────────────────────────────────
   if (pathname.startsWith('/admin')) {
+
+    // /admin/login es la pantalla de acceso exclusiva del admin
+    if (pathname === '/admin/login') {
+      // Admin con sesión activa → ya está autenticado, ir al panel
+      if (isAdmin) return NextResponse.redirect(new URL('/admin', request.url));
+      // Sin sesión o sesión de otro rol → mostrar el formulario de login
+      return passThrough(request);
+    }
+
+    // Resto de rutas /admin/* → requieren sesión de admin
     if (!user) {
-      // Sin sesión → login con ?next=/admin para volver después del login
-      const loginUrl = new URL('/auth/login', request.url);
-      loginUrl.searchParams.set('next', '/admin');
-      return NextResponse.redirect(loginUrl);
+      // Sin sesión → login admin
+      return NextResponse.redirect(new URL('/admin/login', request.url));
     }
     if (!isAdmin) {
-      // Sesión activa pero no es el admin → redirigir al inicio
-      return NextResponse.redirect(new URL('/', request.url));
+      // Sesión activa de otro rol → login admin (no se afecta su sesión)
+      return NextResponse.redirect(new URL('/admin/login', request.url));
     }
-    // Admin confirmado → dejar pasar (el layout hace la verificación final)
-    return NextResponse.next();
+    // Admin confirmado → pasar; el layout verifica de nuevo (defense-in-depth)
+    return passThrough(request);
   }
 
   // ── Rutas de auth — redirigir si ya hay sesión activa ────────────────────
   if (pathname.startsWith('/auth/') && user) {
-    // Admin activo en /auth/* → ir directo al panel admin
+    // Admin activo visitando /auth/* → ir al panel (tiene su propio login)
     if (isAdmin) {
       return NextResponse.redirect(new URL('/admin', request.url));
     }
@@ -185,7 +203,7 @@ export function middleware(request: NextRequest) {
     // Sin sesión → landing page pública
   }
 
-  return NextResponse.next();
+  return passThrough(request);
 }
 
 export const config = {
